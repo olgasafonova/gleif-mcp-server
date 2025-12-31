@@ -58,13 +58,12 @@ func DefaultConfig() Config {
 
 // Client is a GLEIF API client with rate limiting, retries, and caching.
 type Client struct {
-	httpClient  *http.Client
-	baseURL     string
-	logger      *slog.Logger
-	limiter     *rate.Limiter
-	cache       *Cache
-	config      Config
-	requestCount int64
+	httpClient *http.Client
+	baseURL    string
+	logger     *slog.Logger
+	limiter    *rate.Limiter
+	cache      *Cache
+	config     Config
 }
 
 // NewClient creates a new GLEIF client.
@@ -635,7 +634,7 @@ func (c *Client) doRequest(ctx context.Context, url string, result any) error {
 		}
 		return NewNetworkError(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
