@@ -1,0 +1,76 @@
+{
+  "$schema": "https://mcpb.modelcontextprotocol.io/manifest.schema.json",
+  "name": "gleif-mcp-server",
+  "display_name": "GLEIF MCP Server",
+  "version": "0.5.0",
+  "description": "Access the Global Legal Entity Identifier (LEI) database for company verification, KYC, and corporate ownership research via GLEIF's public API.",
+  "author": {
+    "name": "Olga Safonova",
+    "url": "https://github.com/olgasafonova"
+  },
+  "repository": "https://github.com/olgasafonova/gleif-mcp-server",
+  "license": "MIT",
+  "server": {
+    "type": "binary",
+    "entry_point": "gleif-mcp-server"
+  },
+  "mcp_config": {
+    "command": "gleif-mcp-server",
+    "args": [],
+    "env": {}
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "architectures": ["x64", "arm64"]
+  },
+  "tools": [
+    {
+      "name": "lei_lookup",
+      "description": "Get full details for a specific LEI (Legal Entity Identifier)"
+    },
+    {
+      "name": "validate_lei",
+      "description": "Check if an LEI code is valid (format, check digits, status)"
+    },
+    {
+      "name": "batch_lei_lookup",
+      "description": "Look up multiple LEI records in one request (max 100)"
+    },
+    {
+      "name": "search_entity",
+      "description": "Search for legal entities by name with pagination"
+    },
+    {
+      "name": "search_by_bic",
+      "description": "Find LEI from a bank's BIC/SWIFT code"
+    },
+    {
+      "name": "search_by_isin",
+      "description": "Find the issuer's LEI from a securities ISIN code"
+    },
+    {
+      "name": "search_by_country",
+      "description": "Find entities registered in a specific country"
+    },
+    {
+      "name": "get_relationships",
+      "description": "Get corporate ownership and fund relationships for an entity"
+    },
+    {
+      "name": "autocomplete",
+      "description": "Get entity name suggestions as user types"
+    },
+    {
+      "name": "get_lei_issuer",
+      "description": "Get details about an LEI issuer (LOU)"
+    },
+    {
+      "name": "list_lei_issuers",
+      "description": "List all LEI issuers worldwide"
+    },
+    {
+      "name": "get_reporting_exceptions",
+      "description": "Get Level 2 reporting exceptions for an entity"
+    }
+  ]
+}
