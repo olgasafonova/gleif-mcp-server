@@ -5,27 +5,27 @@ import "time"
 
 // LEIRecord represents a complete LEI record from the GLEIF API.
 type LEIRecord struct {
-	LEI        string     `json:"lei"`
-	Entity     Entity     `json:"entity"`
+	LEI          string       `json:"lei"`
+	Entity       Entity       `json:"entity"`
 	Registration Registration `json:"registration"`
 }
 
 // Entity contains legal entity information.
 type Entity struct {
-	LegalName           LegalName           `json:"legalName"`
-	OtherNames          []OtherName         `json:"otherNames,omitempty"`
-	LegalAddress        Address             `json:"legalAddress"`
-	HeadquartersAddress Address             `json:"headquartersAddress"`
-	RegisteredAt        RegisteredAt        `json:"registeredAt,omitempty"`
-	RegisteredAs        string              `json:"registeredAs,omitempty"`
-	Jurisdiction        string              `json:"jurisdiction"`
-	Category            string              `json:"category,omitempty"`
-	LegalForm           LegalForm           `json:"legalForm,omitempty"`
-	AssociatedEntity    *AssociatedEntity   `json:"associatedEntity,omitempty"`
-	Status              string              `json:"status"`
-	EntityExpirationDate *string            `json:"entityExpirationDate,omitempty"`
-	EntityExpirationReason *string          `json:"entityExpirationReason,omitempty"`
-	SuccessorEntity     *SuccessorEntity    `json:"successorEntity,omitempty"`
+	LegalName              LegalName         `json:"legalName"`
+	OtherNames             []OtherName       `json:"otherNames,omitempty"`
+	LegalAddress           Address           `json:"legalAddress"`
+	HeadquartersAddress    Address           `json:"headquartersAddress"`
+	RegisteredAt           RegisteredAt      `json:"registeredAt,omitempty"`
+	RegisteredAs           string            `json:"registeredAs,omitempty"`
+	Jurisdiction           string            `json:"jurisdiction"`
+	Category               string            `json:"category,omitempty"`
+	LegalForm              LegalForm         `json:"legalForm,omitempty"`
+	AssociatedEntity       *AssociatedEntity `json:"associatedEntity,omitempty"`
+	Status                 string            `json:"status"`
+	EntityExpirationDate   *string           `json:"entityExpirationDate,omitempty"`
+	EntityExpirationReason *string           `json:"entityExpirationReason,omitempty"`
+	SuccessorEntity        *SuccessorEntity  `json:"successorEntity,omitempty"`
 }
 
 // LegalName represents the official legal name.
@@ -43,15 +43,15 @@ type OtherName struct {
 
 // Address represents a physical address.
 type Address struct {
-	Language           string   `json:"language,omitempty"`
-	AddressLines       []string `json:"addressLines,omitempty"`
-	AddressNumber      string   `json:"addressNumber,omitempty"`
-	AddressNumberWithinBuilding string `json:"addressNumberWithinBuilding,omitempty"`
-	MailRouting        string   `json:"mailRouting,omitempty"`
-	City               string   `json:"city"`
-	Region             string   `json:"region,omitempty"`
-	Country            string   `json:"country"`
-	PostalCode         string   `json:"postalCode,omitempty"`
+	Language                    string   `json:"language,omitempty"`
+	AddressLines                []string `json:"addressLines,omitempty"`
+	AddressNumber               string   `json:"addressNumber,omitempty"`
+	AddressNumberWithinBuilding string   `json:"addressNumberWithinBuilding,omitempty"`
+	MailRouting                 string   `json:"mailRouting,omitempty"`
+	City                        string   `json:"city"`
+	Region                      string   `json:"region,omitempty"`
+	Country                     string   `json:"country"`
+	PostalCode                  string   `json:"postalCode,omitempty"`
 }
 
 // RegisteredAt contains registration authority information.
@@ -80,12 +80,12 @@ type SuccessorEntity struct {
 
 // Registration contains LEI registration metadata.
 type Registration struct {
-	InitialRegistrationDate time.Time `json:"initialRegistrationDate"`
-	LastUpdateDate          time.Time `json:"lastUpdateDate"`
-	Status                  string    `json:"status"`
-	NextRenewalDate         time.Time `json:"nextRenewalDate"`
-	ManagingLOU             string    `json:"managingLou"`
-	ValidationSources       string    `json:"validationSources,omitempty"`
+	InitialRegistrationDate time.Time            `json:"initialRegistrationDate"`
+	LastUpdateDate          time.Time            `json:"lastUpdateDate"`
+	Status                  string               `json:"status"`
+	NextRenewalDate         time.Time            `json:"nextRenewalDate"`
+	ManagingLOU             string               `json:"managingLou"`
+	ValidationSources       string               `json:"validationSources,omitempty"`
 	ValidationAuthority     *ValidationAuthority `json:"validationAuthority,omitempty"`
 }
 
@@ -98,12 +98,12 @@ type ValidationAuthority struct {
 
 // Relationship represents a parent-child or other relationship between entities.
 type Relationship struct {
-	StartNode      RelationshipNode `json:"startNode"`
-	EndNode        RelationshipNode `json:"endNode"`
-	RelationshipType string         `json:"relationshipType"`
-	RelationshipPeriods []RelationshipPeriod `json:"relationshipPeriods,omitempty"`
-	RelationshipStatus  string       `json:"relationshipStatus,omitempty"`
-	RelationshipQualifier string     `json:"relationshipQualifier,omitempty"`
+	StartNode             RelationshipNode     `json:"startNode"`
+	EndNode               RelationshipNode     `json:"endNode"`
+	RelationshipType      string               `json:"relationshipType"`
+	RelationshipPeriods   []RelationshipPeriod `json:"relationshipPeriods,omitempty"`
+	RelationshipStatus    string               `json:"relationshipStatus,omitempty"`
+	RelationshipQualifier string               `json:"relationshipQualifier,omitempty"`
 }
 
 // RelationshipNode represents one side of a relationship.
@@ -133,24 +133,24 @@ type ISINMapping struct {
 
 // APIResponse is the generic wrapper for GLEIF API responses.
 type APIResponse[T any] struct {
-	Meta  Meta   `json:"meta,omitempty"`
+	Meta  Meta          `json:"meta,omitempty"`
 	Data  []DataItem[T] `json:"data"`
-	Links Links  `json:"links,omitempty"`
+	Links Links         `json:"links,omitempty"`
 }
 
 // SingleResponse is for single-item responses.
 type SingleResponse[T any] struct {
-	Meta Meta       `json:"meta,omitempty"`
+	Meta Meta        `json:"meta,omitempty"`
 	Data DataItem[T] `json:"data"`
 }
 
 // DataItem wraps individual records.
 type DataItem[T any] struct {
-	Type       string `json:"type"`
-	ID         string `json:"id"`
-	Attributes T      `json:"attributes"`
+	Type          string                     `json:"type"`
+	ID            string                     `json:"id"`
+	Attributes    T                          `json:"attributes"`
 	Relationships map[string]RelationshipRef `json:"relationships,omitempty"`
-	Links      Links  `json:"links,omitempty"`
+	Links         Links                      `json:"links,omitempty"`
 }
 
 // RelationshipRef points to related resources.
@@ -171,12 +171,12 @@ type GoldenCopy struct {
 
 // Pagination contains paging info.
 type Pagination struct {
-	CurrentPage  int `json:"currentPage"`
-	PerPage      int `json:"perPage"`
-	From         int `json:"from"`
-	To           int `json:"to"`
-	Total        int `json:"total"`
-	LastPage     int `json:"lastPage"`
+	CurrentPage int `json:"currentPage"`
+	PerPage     int `json:"perPage"`
+	From        int `json:"from"`
+	To          int `json:"to"`
+	Total       int `json:"total"`
+	LastPage    int `json:"lastPage"`
 }
 
 // Links contains HATEOAS links.
@@ -191,9 +191,9 @@ type Links struct {
 
 // AutocompleteResult represents a single autocomplete suggestion.
 type AutocompleteResult struct {
-	LEI        string `json:"lei"`
-	LegalName  string `json:"value"`
-	Country    string `json:"country,omitempty"`
+	LEI       string `json:"lei"`
+	LegalName string `json:"value"`
+	Country   string `json:"country,omitempty"`
 }
 
 // AutocompleteResponse is the API response for autocomplete.
@@ -213,24 +213,24 @@ type ValidationResult struct {
 
 // LEIIssuer represents an LEI issuer (Local Operating Unit / LOU).
 type LEIIssuer struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Country         string `json:"country"`
-	Jurisdiction    string `json:"jurisdiction,omitempty"`
-	Website         string `json:"website,omitempty"`
-	Status          string `json:"status,omitempty"`
-	LEI             string `json:"lei,omitempty"`
-	ManagingLOU     string `json:"managingLou,omitempty"`
-	SponsoredLEIs   int    `json:"sponsoredLeis,omitempty"`
-	AccreditedDate  string `json:"accreditedDate,omitempty"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Country        string `json:"country"`
+	Jurisdiction   string `json:"jurisdiction,omitempty"`
+	Website        string `json:"website,omitempty"`
+	Status         string `json:"status,omitempty"`
+	LEI            string `json:"lei,omitempty"`
+	ManagingLOU    string `json:"managingLou,omitempty"`
+	SponsoredLEIs  int    `json:"sponsoredLeis,omitempty"`
+	AccreditedDate string `json:"accreditedDate,omitempty"`
 }
 
 // ReportingException represents a Level 2 reporting exception.
 type ReportingException struct {
-	LEI               string   `json:"lei"`
-	ExceptionCategory string   `json:"exceptionCategory"`
-	ExceptionReason   string   `json:"exceptionReason"`
-	ExceptionReference string  `json:"exceptionReference,omitempty"`
+	LEI                string `json:"lei"`
+	ExceptionCategory  string `json:"exceptionCategory"`
+	ExceptionReason    string `json:"exceptionReason"`
+	ExceptionReference string `json:"exceptionReference,omitempty"`
 }
 
 // SearchResult wraps search results with pagination info.

@@ -36,9 +36,9 @@ var leiRegex = regexp.MustCompile(LEIPattern)
 type Config struct {
 	BaseURL     string
 	Timeout     time.Duration
-	RateLimit   float64 // Requests per second
-	BurstSize   int     // Burst size for rate limiter
-	MaxRetries  int     // Max retry attempts
+	RateLimit   float64       // Requests per second
+	BurstSize   int           // Burst size for rate limiter
+	MaxRetries  int           // Max retry attempts
 	RetryDelay  time.Duration // Initial retry delay
 	EnableCache bool
 }

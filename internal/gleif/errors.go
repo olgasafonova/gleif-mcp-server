@@ -18,11 +18,11 @@ const (
 
 // Common errors.
 var (
-	ErrNotFound     = errors.New("resource not found")
-	ErrRateLimited  = errors.New("rate limit exceeded")
-	ErrInvalidLEI   = errors.New("invalid LEI format")
-	ErrInvalidBIC   = errors.New("invalid BIC format")
-	ErrInvalidISIN  = errors.New("invalid ISIN format")
+	ErrNotFound       = errors.New("resource not found")
+	ErrRateLimited    = errors.New("rate limit exceeded")
+	ErrInvalidLEI     = errors.New("invalid LEI format")
+	ErrInvalidBIC     = errors.New("invalid BIC format")
+	ErrInvalidISIN    = errors.New("invalid ISIN format")
 	ErrInvalidCountry = errors.New("invalid country code")
 )
 

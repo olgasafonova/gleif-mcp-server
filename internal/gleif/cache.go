@@ -9,12 +9,12 @@ import (
 
 // CacheConfig configures the cache behavior.
 type CacheConfig struct {
-	LEIRecordTTL      time.Duration // TTL for LEI record lookups
-	ValidationTTL     time.Duration // TTL for validation results
-	AutocompleteTTL   time.Duration // TTL for autocomplete results
-	SearchTTL         time.Duration // TTL for search results
-	MaxEntries        int           // Max entries in cache
-	Enabled           bool          // Enable/disable caching
+	LEIRecordTTL    time.Duration // TTL for LEI record lookups
+	ValidationTTL   time.Duration // TTL for validation results
+	AutocompleteTTL time.Duration // TTL for autocomplete results
+	SearchTTL       time.Duration // TTL for search results
+	MaxEntries      int           // Max entries in cache
+	Enabled         bool          // Enable/disable caching
 }
 
 // DefaultCacheConfig returns sensible cache defaults.
@@ -41,19 +41,19 @@ func (e cacheEntry[T]) isExpired() bool {
 
 // Cache provides TTL-based caching for GLEIF API responses.
 type Cache struct {
-	config     CacheConfig
-	leiCache   *lru.Cache[string, cacheEntry[*LEIRecord]]
-	validCache *lru.Cache[string, cacheEntry[*ValidationResult]]
+	config      CacheConfig
+	leiCache    *lru.Cache[string, cacheEntry[*LEIRecord]]
+	validCache  *lru.Cache[string, cacheEntry[*ValidationResult]]
 	searchCache *lru.Cache[string, cacheEntry[[]LEIRecord]]
-	autoCache  *lru.Cache[string, cacheEntry[[]AutocompleteResult]]
-	mu         sync.RWMutex
-	stats      CacheStats
+	autoCache   *lru.Cache[string, cacheEntry[[]AutocompleteResult]]
+	mu          sync.RWMutex
+	stats       CacheStats
 }
 
 // CacheStats tracks cache performance.
 type CacheStats struct {
-	Hits   int64
-	Misses int64
+	Hits      int64
+	Misses    int64
 	Evictions int64
 }
 
