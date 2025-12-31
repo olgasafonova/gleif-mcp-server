@@ -1,0 +1,12 @@
+# Binaries
+gleif-mcp-server
+gleif-mcp-server.exe
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
