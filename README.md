@@ -6,6 +6,16 @@ A Model Context Protocol (MCP) server for accessing the Global Legal Entity Iden
 [![Go Report Card](https://goreportcard.com/badge/github.com/olgasafonova/gleif-mcp-server)](https://goreportcard.com/report/github.com/olgasafonova/gleif-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+**What this does:** Gives your AI assistant the ability to look up company identities, verify legal entities, and explore corporate ownership structures using the official GLEIF database. Works with Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, and other MCP-compatible tools. Ask questions in plain English; get structured answers instantly.
+
+## Use Cases
+
+- **KYC & Onboarding**: Verify counterparty identities before signing contracts
+- **Compliance Checks**: Validate LEIs for MiFID II, EMIR, or DORA reporting
+- **Due Diligence**: Research corporate ownership chains and ultimate parents
+- **Financial Analysis**: Cross-reference securities (ISIN) and banks (BIC/SWIFT) with their legal entities
+- **Data Enrichment**: Batch-process company lists to add LEI data
+
 ## What is LEI?
 
 The Legal Entity Identifier (LEI) is a 20-character alphanumeric code that uniquely identifies legal entities participating in financial transactions worldwide. It's mandated by 200+ regulations including MiFID II, EMIR, Dodd-Frank, and DORA.
@@ -37,10 +47,10 @@ Example: `HWUPKR0MPOU8FGXBT394` (Apple Inc.)
 - **LEI Issuers**: List and details of all Local Operating Units (LOUs)
 
 ### Performance & Reliability
-- **Smart Caching**: LRU cache with configurable TTL (default 15 min)
-- **Rate Limiting**: Token bucket limiting to stay under GLEIF's 60 req/min
-- **Automatic Retries**: Exponential backoff for transient failures
-- **Connection Pooling**: Efficient HTTP connection reuse
+- **Fast Responses**: Results are cached locally, so repeat queries return instantly
+- **No API Key Needed**: Works out of the box with GLEIF's public API
+- **Handles Errors Gracefully**: Automatic retries on timeouts or temporary failures
+- **Stays Within Limits**: Built-in rate limiting prevents hitting GLEIF's quotas
 
 ## Installation
 
@@ -78,6 +88,8 @@ go install github.com/olgasafonova/gleif-mcp-server@latest
 ```
 
 ## AI Agent Setup
+
+> **Quickest start:** Using Claude Desktop? Just add the config below and restart. Using an IDE like Cursor? Same idea, different config file. Pick your tool below.
 
 ### Claude Desktop
 
@@ -373,13 +385,17 @@ gleif-mcp-server/
     └── handlers.go        # MCP tool implementations
 ```
 
-### Performance Characteristics
+### Technical Details
 
-- **Cache TTL**: 15 minutes (configurable)
-- **Cache Size**: 1000 entities, 500 search results
-- **Rate Limit**: 50 requests/minute (safe margin under GLEIF's 60)
-- **Retry Strategy**: Exponential backoff (1s, 2s, 4s) with max 3 retries
-- **Connection Pool**: 100 max idle, 10 per host
+For developers who want the specifics:
+
+| Setting | Value |
+|---------|-------|
+| Cache duration | 15 minutes |
+| Cache capacity | 1000 entities, 500 searches |
+| Rate limit | 50 req/min (GLEIF allows 60) |
+| Retry strategy | 3 attempts with exponential backoff |
+| Connection pool | 100 max idle, 10 per host |
 
 ## API Reference
 
