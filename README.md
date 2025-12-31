@@ -2,28 +2,67 @@
 
 A Model Context Protocol (MCP) server for accessing the Global Legal Entity Identifier (LEI) database via GLEIF's public API.
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/olgasafonova/gleif-mcp-server)](https://goreportcard.com/report/github.com/olgasafonova/gleif-mcp-server)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 ## What is LEI?
 
 The Legal Entity Identifier (LEI) is a 20-character alphanumeric code that uniquely identifies legal entities participating in financial transactions worldwide. It's mandated by 200+ regulations including MiFID II, EMIR, Dodd-Frank, and DORA.
 
+**LEI Format (ISO 17442):**
+- Characters 1-4: LOU (Local Operating Unit) prefix
+- Characters 5-18: Entity-specific identifier
+- Characters 19-20: Check digits (mod 97 validation)
+
+Example: `HWUPKR0MPOU8FGXBT394` (Apple Inc.)
+
 ## Features
 
+### Core Capabilities
 - **LEI Lookup**: Get full entity details by LEI code
-- **Entity Search**: Find companies by name with fuzzy matching
+- **Batch Lookup**: Look up multiple LEIs in a single request (up to 100)
+- **Entity Search**: Find companies by name with fuzzy matching and pagination
+- **LEI Validation**: Verify format, check digits (ISO 17442), and registration status
+
+### Financial Identifiers
 - **BIC/SWIFT Lookup**: Find bank LEIs from BIC codes
 - **ISIN Lookup**: Find security issuer LEIs from ISIN codes
 - **Country Browse**: List entities by jurisdiction
-- **Relationship Mapping**: Explore corporate ownership structures
-- **LEI Validation**: Verify LEI format, check digits, and registration status
-- **Autocomplete**: Entity name suggestions for search UIs
+
+### Relationships & Compliance
+- **Corporate Ownership**: Parent companies, subsidiaries, ultimate parents
+- **Fund Relationships**: Fund managers, umbrella funds, sub-funds
+- **Reporting Exceptions**: Level 2 data exceptions with reasons
+- **LEI Issuers**: List and details of all Local Operating Units (LOUs)
+
+### Performance & Reliability
+- **Smart Caching**: LRU cache with configurable TTL (default 15 min)
+- **Rate Limiting**: Token bucket limiting to stay under GLEIF's 60 req/min
+- **Automatic Retries**: Exponential backoff for transient failures
+- **Connection Pooling**: Efficient HTTP connection reuse
 
 ## Installation
 
-### Prerequisites
+### Download Binary
 
-- Go 1.23 or later
+Pre-built binaries for all platforms on the [releases page](https://github.com/olgasafonova/gleif-mcp-server/releases):
 
-### Build from source
+| Platform | Binary |
+|----------|--------|
+| macOS (Apple Silicon) | `gleif-mcp-server-darwin-arm64` |
+| macOS (Intel) | `gleif-mcp-server-darwin-amd64` |
+| Linux (x64) | `gleif-mcp-server-linux-amd64` |
+| Linux (ARM64) | `gleif-mcp-server-linux-arm64` |
+| Windows (x64) | `gleif-mcp-server-windows-amd64.exe` |
+
+```bash
+# macOS/Linux - download and make executable
+chmod +x gleif-mcp-server-darwin-arm64
+```
+
+### Build from Source
+
+Requires Go 1.23+:
 
 ```bash
 git clone https://github.com/olgasafonova/gleif-mcp-server.git
@@ -31,15 +70,17 @@ cd gleif-mcp-server
 go build -o gleif-mcp-server .
 ```
 
-### Download binary
+### Install via Go
 
-Pre-built binaries are available on the [releases page](https://github.com/olgasafonova/gleif-mcp-server/releases).
+```bash
+go install github.com/olgasafonova/gleif-mcp-server@latest
+```
 
-## Configuration
+## AI Agent Setup
 
 ### Claude Desktop
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
@@ -51,80 +92,334 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 }
 ```
 
-### Claude Code
+Restart Claude Desktop after editing the config.
+
+### Claude Code (CLI)
 
 ```bash
+# Add the server
 claude mcp add gleif /path/to/gleif-mcp-server
+
+# Or with scope for all projects
+claude mcp add --scope user gleif /path/to/gleif-mcp-server
 ```
 
-## Tools
+### Cursor IDE
 
-| Tool | Description |
-|------|-------------|
-| `lei_lookup` | Get full details for a specific LEI code |
-| `validate_lei` | Check if an LEI is valid and active |
-| `search_entity` | Search for legal entities by name |
-| `search_by_bic` | Find LEI from a bank's BIC/SWIFT code |
-| `search_by_isin` | Find issuer LEI from securities ISIN |
-| `search_by_country` | Find entities by jurisdiction |
-| `get_relationships` | Get corporate ownership relationships |
-| `autocomplete` | Get entity name suggestions |
+Add to `.cursor/mcp.json` in your project or `~/.cursor/mcp.json` for global config:
 
-## Example Usage
-
-### Look up an LEI
-
-```
-"Look up LEI HWUPKR0MPOU8FGXBT394"
+```json
+{
+  "mcpServers": {
+    "gleif": {
+      "command": "/path/to/gleif-mcp-server"
+    }
+  }
+}
 ```
 
-Returns Apple Inc.'s full entity details including legal name, address, jurisdiction, registration status, and renewal dates.
+### VS Code with Continue Extension
 
-### Search for a company
+Add to `.continue/config.json`:
 
-```
-"Search for Deutsche Bank"
-```
-
-Returns matching entities with LEI, name, country, and status.
-
-### Find bank LEI from BIC
-
-```
-"Find LEI for BIC DEUTDEFF"
-```
-
-Returns Deutsche Bank AG's LEI record.
-
-### Explore corporate structure
-
-```
-"Who owns Apple?"
+```json
+{
+  "experimental": {
+    "modelContextProtocolServers": [
+      {
+        "name": "gleif",
+        "transport": {
+          "type": "stdio",
+          "command": "/path/to/gleif-mcp-server"
+        }
+      }
+    ]
+  }
+}
 ```
 
-Returns parent/child entity relationships.
+### Windsurf
 
-### Validate an LEI
+Add to `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "gleif": {
+      "command": "/path/to/gleif-mcp-server"
+    }
+  }
+}
+```
+
+### Cline (VS Code Extension)
+
+Add via Cline's MCP settings or in `.vscode/cline_mcp_settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "gleif": {
+      "command": "/path/to/gleif-mcp-server",
+      "args": []
+    }
+  }
+}
+```
+
+## Tools Reference
+
+### Core Lookup Tools
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `lei_lookup` | Get full details for a specific LEI | `lei` (required): 20-char LEI code |
+| `validate_lei` | Check format, check digits, and status | `lei` (required): LEI to validate |
+| `batch_lei_lookup` | Look up multiple LEIs at once | `leis` (required): Comma-separated LEIs (max 100) |
+
+### Search Tools
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `search_entity` | Search by company name | `query` (required), `limit` (default 20), `page` (default 1), `fuzzy` (default true) |
+| `search_by_bic` | Find LEI from BIC/SWIFT | `bic` (required): 8 or 11 char code |
+| `search_by_isin` | Find issuer LEI from ISIN | `isin` (required): 12-char ISIN |
+| `search_by_country` | List entities by country | `country` (required): ISO 2-letter code, `limit` (default 20) |
+| `autocomplete` | Entity name suggestions | `prefix` (required): min 2 chars, `limit` (default 10) |
+
+### Relationship Tools
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `get_relationships` | Get corporate/fund relationships | `lei` (required), `type`: direct-parent, ultimate-parent, children, fund-manager, umbrella-fund, sub-funds |
+
+### LEI Issuer Tools
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `get_lei_issuer` | Get details about an LOU | `issuer_id` (required): LOU identifier |
+| `list_lei_issuers` | List all LOUs worldwide | None |
+
+### Compliance Tools
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `get_reporting_exceptions` | Get Level 2 reporting exceptions | `lei` (required): LEI to check |
+
+## Usage Examples
+
+### Basic LEI Lookup
+
+**Prompt:** "Look up LEI HWUPKR0MPOU8FGXBT394"
+
+**Returns:** Full entity details for Apple Inc. including legal name, headquarters address, jurisdiction (US-CA), entity status, registration status, managing LOU, and next renewal date.
+
+### Company Search with Pagination
+
+**Prompt:** "Search for Deutsche Bank, show page 2"
+
+**Tool call:**
+```json
+{
+  "name": "search_entity",
+  "arguments": {
+    "query": "Deutsche Bank",
+    "limit": 20,
+    "page": 2,
+    "fuzzy": true
+  }
+}
+```
+
+**Returns:** List of matching entities with pagination info (total results, current page, has more).
+
+### Batch LEI Lookup
+
+**Prompt:** "Look up these LEIs: HWUPKR0MPOU8FGXBT394, 5493006MHB84DD0ZWV18, 549300GKFG0RYRRQ1414"
+
+**Returns:** Summary of all three entities with LEI, legal name, country, city, and status.
+
+### Find Bank by BIC
+
+**Prompt:** "Find the LEI for BIC DEUTDEFF"
+
+**Returns:** Deutsche Bank AG's LEI record with full details.
+
+### Find Security Issuer
+
+**Prompt:** "Who issued ISIN US0378331005?"
+
+**Returns:** Apple Inc. (the issuer of AAPL stock).
+
+### Corporate Structure
+
+**Prompt:** "Who is the ultimate parent of this subsidiary?"
+
+**Tool call:**
+```json
+{
+  "name": "get_relationships",
+  "arguments": {
+    "lei": "549300GKFG0RYRRQ1414",
+    "type": "ultimate-parent"
+  }
+}
+```
+
+### LEI Validation
+
+**Prompt:** "Is LEI HWUPKR0MPOU8FGXBT394 valid?"
+
+**Returns:**
+```json
+{
+  "lei": "HWUPKR0MPOU8FGXBT394",
+  "valid": true,
+  "status": "ISSUED",
+  "entityStatus": "ACTIVE",
+  "nextRenewal": "2025-08-15"
+}
+```
+
+### Check Reporting Exceptions
+
+**Prompt:** "Why is parent info missing for this company?"
+
+**Tool call:**
+```json
+{
+  "name": "get_reporting_exceptions",
+  "arguments": {
+    "lei": "5493006MHB84DD0ZWV18"
+  }
+}
+```
+
+**Returns:** Exception categories and reasons (e.g., NON_CONSOLIDATING, NATURAL_PERSONS).
+
+### List All LEI Issuers
+
+**Prompt:** "Show me all LEI issuers"
+
+**Returns:** Complete list of LOUs (Local Operating Units) with name, country, status, and number of sponsored LEIs.
+
+## Response Format
+
+All tools return JSON with relevant fields. Example entity record:
+
+```json
+{
+  "lei": "HWUPKR0MPOU8FGXBT394",
+  "legalName": "Apple Inc.",
+  "country": "US",
+  "city": "Cupertino",
+  "status": "ACTIVE",
+  "regStatus": "ISSUED"
+}
+```
+
+Search results include pagination:
+
+```json
+{
+  "count": 20,
+  "results": [...],
+  "pagination": {
+    "currentPage": 1,
+    "perPage": 20,
+    "total": 156,
+    "lastPage": 8
+  },
+  "hasMore": true
+}
+```
+
+## Error Handling
+
+The server returns structured errors:
+
+| Error Code | Description | Retryable |
+|------------|-------------|-----------|
+| `not_found` | LEI/entity not in GLEIF database | No |
+| `invalid_format` | Invalid LEI/BIC/ISIN format | No |
+| `rate_limited` | GLEIF API rate limit exceeded | Yes |
+| `timeout` | Request timed out | Yes |
+| `server_error` | GLEIF API error | Depends on status |
+| `network_error` | Connection failed | Yes |
+
+Example error response:
+```json
+{
+  "code": "not_found",
+  "message": "LEI not found in GLEIF database",
+  "statusCode": 404,
+  "retryable": false
+}
+```
+
+## Architecture
 
 ```
-"Is this LEI valid: HWUPKR0MPOU8FGXBT394"
+gleif-mcp-server/
+├── main.go                 # Entry point, MCP server setup
+├── internal/gleif/
+│   ├── client.go          # GLEIF API client with caching & rate limiting
+│   ├── cache.go           # LRU cache with TTL
+│   ├── types.go           # Data structures for API responses
+│   └── errors.go          # Structured error types
+└── tools/
+    ├── definitions.go     # Tool metadata and parameter specs
+    └── handlers.go        # MCP tool implementations
 ```
 
-Returns validation result with format check, check digit verification, and database lookup.
+### Performance Characteristics
 
-## LEI Format
+- **Cache TTL**: 15 minutes (configurable)
+- **Cache Size**: 1000 entities, 500 search results
+- **Rate Limit**: 50 requests/minute (safe margin under GLEIF's 60)
+- **Retry Strategy**: Exponential backoff (1s, 2s, 4s) with max 3 retries
+- **Connection Pool**: 100 max idle, 10 per host
 
-LEIs follow ISO 17442 format:
-- 4 characters: LOU (Local Operating Unit) prefix
-- 14 characters: Entity-specific identifier
-- 2 digits: Check digits (mod 97 validation)
+## API Reference
 
-Example: `HWUPKR0MPOU8FGXBT394` (Apple Inc.)
+This server wraps the public GLEIF API:
+- **Base URL**: https://api.gleif.org/api/v1
+- **Authentication**: None required
+- **Rate Limit**: 60 requests/minute
+- **Documentation**: https://www.gleif.org/en/lei-data/gleif-api
 
-## API
+## Troubleshooting
 
-This server uses the public GLEIF API (https://api.gleif.org/api/v1). No authentication required. Rate limit: 60 requests/minute.
+### Server won't start
+- Check the binary has execute permissions: `chmod +x gleif-mcp-server`
+- Verify the path in your MCP config is absolute, not relative
+
+### "Rate limit exceeded" errors
+- The server automatically handles rate limiting with retries
+- If persistent, reduce concurrent requests or wait a few minutes
+
+### "LEI not found" for valid LEI
+- The GLEIF database updates daily; recently issued LEIs may not appear immediately
+- Verify the LEI format (exactly 20 alphanumeric characters)
+
+### Slow responses
+- First requests may be slower (cache warming)
+- GLEIF API occasionally has latency spikes; retries handle this automatically
+
+### Claude Desktop doesn't show the server
+- Restart Claude Desktop after editing config
+- Check JSON syntax in config file
+- Verify the binary path exists and is executable
+
+## Contributing
+
+Contributions welcome. Please open an issue first to discuss proposed changes.
 
 ## License
 
-MIT License
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+- [GLEIF](https://www.gleif.org/) for the public LEI API
+- [Model Context Protocol](https://modelcontextprotocol.io/) for the MCP specification

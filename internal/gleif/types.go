@@ -210,3 +210,33 @@ type ValidationResult struct {
 	NextRenewal  string `json:"nextRenewal,omitempty"`
 	Message      string `json:"message,omitempty"`
 }
+
+// LEIIssuer represents an LEI issuer (Local Operating Unit / LOU).
+type LEIIssuer struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Country         string `json:"country"`
+	Jurisdiction    string `json:"jurisdiction,omitempty"`
+	Website         string `json:"website,omitempty"`
+	Status          string `json:"status,omitempty"`
+	LEI             string `json:"lei,omitempty"`
+	ManagingLOU     string `json:"managingLou,omitempty"`
+	SponsoredLEIs   int    `json:"sponsoredLeis,omitempty"`
+	AccreditedDate  string `json:"accreditedDate,omitempty"`
+}
+
+// ReportingException represents a Level 2 reporting exception.
+type ReportingException struct {
+	LEI               string   `json:"lei"`
+	ExceptionCategory string   `json:"exceptionCategory"`
+	ExceptionReason   string   `json:"exceptionReason"`
+	ExceptionReference string  `json:"exceptionReference,omitempty"`
+}
+
+// SearchResult wraps search results with pagination info.
+type SearchResult struct {
+	Records    []LEIRecord `json:"records"`
+	Pagination *Pagination `json:"pagination,omitempty"`
+	Total      int         `json:"total"`
+	HasMore    bool        `json:"hasMore"`
+}

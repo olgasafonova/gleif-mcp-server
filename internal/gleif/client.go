@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 const (
@@ -22,37 +24,74 @@ const (
 
 	// LEI format: 20 alphanumeric characters.
 	LEIPattern = `^[A-Z0-9]{4}[A-Z0-9]{2}[A-Z0-9]{12}[0-9]{2}$`
+
+	// Rate limit: GLEIF allows 60/min, we use 50 to be safe.
+	DefaultRateLimit = 50.0 / 60.0 // ~0.83 requests per second
+	DefaultBurstSize = 10
 )
 
 var leiRegex = regexp.MustCompile(LEIPattern)
 
 // Config holds client configuration.
 type Config struct {
-	BaseURL string
-	Timeout time.Duration
+	BaseURL     string
+	Timeout     time.Duration
+	RateLimit   float64 // Requests per second
+	BurstSize   int     // Burst size for rate limiter
+	MaxRetries  int     // Max retry attempts
+	RetryDelay  time.Duration // Initial retry delay
+	EnableCache bool
 }
 
 // DefaultConfig returns default configuration.
 func DefaultConfig() Config {
 	return Config{
-		BaseURL: BaseURL,
-		Timeout: DefaultTimeout,
+		BaseURL:     BaseURL,
+		Timeout:     DefaultTimeout,
+		RateLimit:   DefaultRateLimit,
+		BurstSize:   DefaultBurstSize,
+		MaxRetries:  3,
+		RetryDelay:  time.Second,
+		EnableCache: true,
 	}
 }
 
-// Client is a GLEIF API client.
+// Client is a GLEIF API client with rate limiting, retries, and caching.
 type Client struct {
-	httpClient *http.Client
-	baseURL    string
-	logger     *slog.Logger
+	httpClient  *http.Client
+	baseURL     string
+	logger      *slog.Logger
+	limiter     *rate.Limiter
+	cache       *Cache
+	config      Config
+	requestCount int64
 }
 
 // NewClient creates a new GLEIF client.
 func NewClient(config Config, logger *slog.Logger) *Client {
+	cache, _ := NewCache(CacheConfig{
+		LEIRecordTTL:    time.Hour,
+		ValidationTTL:   24 * time.Hour,
+		AutocompleteTTL: 5 * time.Minute,
+		SearchTTL:       10 * time.Minute,
+		MaxEntries:      10000,
+		Enabled:         config.EnableCache,
+	})
+
 	return &Client{
-		httpClient: &http.Client{Timeout: config.Timeout},
-		baseURL:    config.BaseURL,
-		logger:     logger,
+		httpClient: &http.Client{
+			Timeout: config.Timeout,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
+		baseURL: config.BaseURL,
+		logger:  logger,
+		limiter: rate.NewLimiter(rate.Limit(config.RateLimit), config.BurstSize),
+		cache:   cache,
+		config:  config,
 	}
 }
 
@@ -60,38 +99,111 @@ func NewClient(config Config, logger *slog.Logger) *Client {
 func (c *Client) GetLEI(ctx context.Context, lei string) (*LEIRecord, error) {
 	lei = strings.ToUpper(strings.TrimSpace(lei))
 	if !leiRegex.MatchString(lei) {
-		return nil, fmt.Errorf("invalid LEI format: %s", lei)
+		return nil, NewInvalidFormatError("LEI", "must be 20 alphanumeric characters")
+	}
+
+	// Check cache first
+	if record, ok := c.cache.GetLEI(lei); ok {
+		c.logger.Debug("Cache hit for LEI", "lei", lei)
+		return record, nil
 	}
 
 	reqURL := fmt.Sprintf("%s/lei-records/%s", c.baseURL, lei)
 	c.logger.Debug("Fetching LEI", "lei", lei, "url", reqURL)
 
 	var resp SingleResponse[LEIRecord]
-	if err := c.doRequest(ctx, reqURL, &resp); err != nil {
+	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
 		return nil, err
 	}
 
 	record := resp.Data.Attributes
 	record.LEI = resp.Data.ID
+
+	// Cache the result
+	c.cache.SetLEI(lei, &record)
+
 	return &record, nil
 }
 
-// SearchEntities searches for entities by name.
-func (c *Client) SearchEntities(ctx context.Context, query string, limit int) ([]LEIRecord, error) {
+// GetBatchLEI retrieves multiple LEI records in one request.
+func (c *Client) GetBatchLEI(ctx context.Context, leis []string) ([]LEIRecord, error) {
+	if len(leis) == 0 {
+		return nil, NewInvalidFormatError("leis", "at least one LEI required")
+	}
+	if len(leis) > 100 {
+		return nil, NewInvalidFormatError("leis", "maximum 100 LEIs per request")
+	}
+
+	// Validate and normalize all LEIs
+	normalized := make([]string, len(leis))
+	var cached []LEIRecord
+	var toFetch []string
+
+	for i, lei := range leis {
+		lei = strings.ToUpper(strings.TrimSpace(lei))
+		if !leiRegex.MatchString(lei) {
+			return nil, NewInvalidFormatError("LEI", fmt.Sprintf("invalid LEI at position %d: %s", i, lei))
+		}
+		normalized[i] = lei
+
+		// Check cache
+		if record, ok := c.cache.GetLEI(lei); ok {
+			cached = append(cached, *record)
+		} else {
+			toFetch = append(toFetch, lei)
+		}
+	}
+
+	// If all cached, return
+	if len(toFetch) == 0 {
+		c.logger.Debug("All LEIs found in cache", "count", len(cached))
+		return cached, nil
+	}
+
+	// Fetch remaining
+	params := url.Values{}
+	params.Set("filter[lei]", strings.Join(toFetch, ","))
+	params.Set("page[size]", "100")
+
+	reqURL := fmt.Sprintf("%s/lei-records?%s", c.baseURL, params.Encode())
+	c.logger.Debug("Batch fetching LEIs", "count", len(toFetch), "url", reqURL)
+
+	var resp APIResponse[LEIRecord]
+	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
+		return nil, err
+	}
+
+	results := make([]LEIRecord, len(resp.Data))
+	for i, item := range resp.Data {
+		results[i] = item.Attributes
+		results[i].LEI = item.ID
+		c.cache.SetLEI(item.ID, &results[i])
+	}
+
+	// Combine cached and fetched
+	return append(cached, results...), nil
+}
+
+// SearchEntities searches for entities by name with pagination.
+func (c *Client) SearchEntities(ctx context.Context, query string, limit, page int) ([]LEIRecord, *Pagination, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
+	}
+	if page <= 0 {
+		page = 1
 	}
 
 	params := url.Values{}
 	params.Set("filter[entity.legalName]", query)
 	params.Set("page[size]", fmt.Sprintf("%d", limit))
+	params.Set("page[number]", fmt.Sprintf("%d", page))
 
 	reqURL := fmt.Sprintf("%s/lei-records?%s", c.baseURL, params.Encode())
 	c.logger.Debug("Searching entities", "query", query, "url", reqURL)
 
 	var resp APIResponse[LEIRecord]
-	if err := c.doRequest(ctx, reqURL, &resp); err != nil {
-		return nil, err
+	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
+		return nil, nil, err
 	}
 
 	records := make([]LEIRecord, len(resp.Data))
@@ -99,25 +211,38 @@ func (c *Client) SearchEntities(ctx context.Context, query string, limit int) ([
 		records[i] = item.Attributes
 		records[i].LEI = item.ID
 	}
-	return records, nil
+	return records, &resp.Meta.Pagination, nil
 }
 
-// FuzzySearch performs fuzzy matching on entity names.
-func (c *Client) FuzzySearch(ctx context.Context, query string, limit int) ([]LEIRecord, error) {
+// FuzzySearch performs fuzzy matching on entity names with pagination.
+func (c *Client) FuzzySearch(ctx context.Context, query string, limit, page int) ([]LEIRecord, *Pagination, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+
+	// Check cache (only for first page)
+	cacheKey := fmt.Sprintf("fuzzy:%s:%d:%d", query, limit, page)
+	if page == 1 {
+		if records, ok := c.cache.GetSearch(cacheKey); ok {
+			c.logger.Debug("Cache hit for fuzzy search", "query", query)
+			return records, nil, nil
+		}
 	}
 
 	params := url.Values{}
 	params.Set("filter[fulltext]", query)
 	params.Set("page[size]", fmt.Sprintf("%d", limit))
+	params.Set("page[number]", fmt.Sprintf("%d", page))
 
 	reqURL := fmt.Sprintf("%s/lei-records?%s", c.baseURL, params.Encode())
 	c.logger.Debug("Fuzzy searching", "query", query, "url", reqURL)
 
 	var resp APIResponse[LEIRecord]
-	if err := c.doRequest(ctx, reqURL, &resp); err != nil {
-		return nil, err
+	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
+		return nil, nil, err
 	}
 
 	records := make([]LEIRecord, len(resp.Data))
@@ -125,14 +250,25 @@ func (c *Client) FuzzySearch(ctx context.Context, query string, limit int) ([]LE
 		records[i] = item.Attributes
 		records[i].LEI = item.ID
 	}
-	return records, nil
+
+	// Cache first page results
+	if page == 1 {
+		c.cache.SetSearch(cacheKey, records)
+	}
+	return records, &resp.Meta.Pagination, nil
 }
 
 // SearchByBIC finds LEI records by BIC/SWIFT code.
 func (c *Client) SearchByBIC(ctx context.Context, bic string) ([]LEIRecord, error) {
 	bic = strings.ToUpper(strings.TrimSpace(bic))
 	if len(bic) != 8 && len(bic) != 11 {
-		return nil, fmt.Errorf("invalid BIC format: must be 8 or 11 characters")
+		return nil, NewInvalidFormatError("BIC", "must be 8 or 11 characters")
+	}
+
+	// Check cache
+	cacheKey := fmt.Sprintf("bic:%s", bic)
+	if records, ok := c.cache.GetSearch(cacheKey); ok {
+		return records, nil
 	}
 
 	params := url.Values{}
@@ -142,7 +278,7 @@ func (c *Client) SearchByBIC(ctx context.Context, bic string) ([]LEIRecord, erro
 	c.logger.Debug("Searching by BIC", "bic", bic, "url", reqURL)
 
 	var resp APIResponse[LEIRecord]
-	if err := c.doRequest(ctx, reqURL, &resp); err != nil {
+	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
 		return nil, err
 	}
 
@@ -151,6 +287,8 @@ func (c *Client) SearchByBIC(ctx context.Context, bic string) ([]LEIRecord, erro
 		records[i] = item.Attributes
 		records[i].LEI = item.ID
 	}
+
+	c.cache.SetSearch(cacheKey, records)
 	return records, nil
 }
 
@@ -158,7 +296,13 @@ func (c *Client) SearchByBIC(ctx context.Context, bic string) ([]LEIRecord, erro
 func (c *Client) SearchByISIN(ctx context.Context, isin string) ([]LEIRecord, error) {
 	isin = strings.ToUpper(strings.TrimSpace(isin))
 	if len(isin) != 12 {
-		return nil, fmt.Errorf("invalid ISIN format: must be 12 characters")
+		return nil, NewInvalidFormatError("ISIN", "must be 12 characters")
+	}
+
+	// Check cache
+	cacheKey := fmt.Sprintf("isin:%s", isin)
+	if records, ok := c.cache.GetSearch(cacheKey); ok {
+		return records, nil
 	}
 
 	// GLEIF uses the ISIN-LEI mapping endpoint
@@ -166,13 +310,13 @@ func (c *Client) SearchByISIN(ctx context.Context, isin string) ([]LEIRecord, er
 	c.logger.Debug("Searching by ISIN", "isin", isin, "url", reqURL)
 
 	var resp APIResponse[LEIRecord]
-	if err := c.doRequest(ctx, reqURL, &resp); err != nil {
+	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
 		// Try alternative approach - search in lei-records with ISIN filter
 		params := url.Values{}
 		params.Set("filter[isin]", isin)
 		reqURL = fmt.Sprintf("%s/lei-records?%s", c.baseURL, params.Encode())
 
-		if err2 := c.doRequest(ctx, reqURL, &resp); err2 != nil {
+		if err2 := c.doRequestWithRetry(ctx, reqURL, &resp); err2 != nil {
 			return nil, fmt.Errorf("ISIN lookup failed: %v", err)
 		}
 	}
@@ -182,6 +326,8 @@ func (c *Client) SearchByISIN(ctx context.Context, isin string) ([]LEIRecord, er
 		records[i] = item.Attributes
 		records[i].LEI = item.ID
 	}
+
+	c.cache.SetSearch(cacheKey, records)
 	return records, nil
 }
 
@@ -189,7 +335,7 @@ func (c *Client) SearchByISIN(ctx context.Context, isin string) ([]LEIRecord, er
 func (c *Client) GetRelationships(ctx context.Context, lei string, relType string) ([]Relationship, error) {
 	lei = strings.ToUpper(strings.TrimSpace(lei))
 	if !leiRegex.MatchString(lei) {
-		return nil, fmt.Errorf("invalid LEI format: %s", lei)
+		return nil, NewInvalidFormatError("LEI", "must be 20 alphanumeric characters")
 	}
 
 	// Build relationship URL
@@ -201,6 +347,12 @@ func (c *Client) GetRelationships(ctx context.Context, lei string, relType strin
 		endpoint = "ultimate-parent-relationship"
 	case "direct-children", "children":
 		endpoint = "direct-child-relationships"
+	case "fund-manager":
+		endpoint = "fund-manager-relationship"
+	case "umbrella-fund":
+		endpoint = "umbrella-fund-relationship"
+	case "sub-funds":
+		endpoint = "sub-fund-relationships"
 	default:
 		// Get all relationships
 		endpoint = "direct-parent-relationship"
@@ -222,13 +374,13 @@ func (c *Client) GetRelationships(ctx context.Context, lei string, relType strin
 	}
 
 	var resp RelResponse
-	if err := c.doRequest(ctx, reqURL, &resp); err != nil {
+	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
 		// Check if it's a single response (for parent relationships)
 		type SingleRelResponse struct {
 			Data RelData `json:"data"`
 		}
 		var singleResp SingleRelResponse
-		if err2 := c.doRequest(ctx, reqURL, &singleResp); err2 != nil {
+		if err2 := c.doRequestWithRetry(ctx, reqURL, &singleResp); err2 != nil {
 			return nil, err
 		}
 		if singleResp.Data.ID != "" {
@@ -248,19 +400,24 @@ func (c *Client) GetRelationships(ctx context.Context, lei string, relType strin
 func (c *Client) ValidateLEI(ctx context.Context, lei string) (*ValidationResult, error) {
 	lei = strings.ToUpper(strings.TrimSpace(lei))
 
+	// Check cache first
+	if result, ok := c.cache.GetValidation(lei); ok {
+		return result, nil
+	}
+
 	result := &ValidationResult{LEI: lei}
 
 	// First check format
 	if !leiRegex.MatchString(lei) {
 		result.Valid = false
-		result.Message = "Invalid LEI format"
+		result.Message = "Invalid LEI format: must be 20 alphanumeric characters"
 		return result, nil
 	}
 
 	// Validate check digits (ISO 17442)
 	if !validateLEICheckDigits(lei) {
 		result.Valid = false
-		result.Message = "Invalid check digits"
+		result.Message = "Invalid check digits: LEI fails ISO 17442 validation"
 		return result, nil
 	}
 
@@ -269,6 +426,7 @@ func (c *Client) ValidateLEI(ctx context.Context, lei string) (*ValidationResult
 	if err != nil {
 		result.Valid = false
 		result.Message = "LEI not found in GLEIF database"
+		c.cache.SetValidation(lei, result)
 		return result, nil
 	}
 
@@ -278,6 +436,7 @@ func (c *Client) ValidateLEI(ctx context.Context, lei string) (*ValidationResult
 	result.NextRenewal = record.Registration.NextRenewalDate.Format("2006-01-02")
 	result.Message = fmt.Sprintf("Valid LEI, registration status: %s", record.Registration.Status)
 
+	c.cache.SetValidation(lei, result)
 	return result, nil
 }
 
@@ -287,6 +446,14 @@ func (c *Client) Autocomplete(ctx context.Context, prefix string, limit int) ([]
 		limit = 10
 	}
 
+	// Check cache
+	if results, ok := c.cache.GetAutocomplete(prefix); ok {
+		if len(results) > limit {
+			return results[:limit], nil
+		}
+		return results, nil
+	}
+
 	params := url.Values{}
 	params.Set("q", prefix)
 
@@ -294,11 +461,11 @@ func (c *Client) Autocomplete(ctx context.Context, prefix string, limit int) ([]
 	c.logger.Debug("Autocomplete", "prefix", prefix, "url", reqURL)
 
 	var resp AutocompleteResponse
-	if err := c.doRequest(ctx, reqURL, &resp); err != nil {
+	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
 		// Fallback to fuzzy search if autocomplete endpoint doesn't work
-		records, err := c.FuzzySearch(ctx, prefix, limit)
-		if err != nil {
-			return nil, err
+		records, _, searchErr := c.FuzzySearch(ctx, prefix, limit, 1)
+		if searchErr != nil {
+			return nil, searchErr
 		}
 		results := make([]AutocompleteResult, len(records))
 		for i, r := range records {
@@ -311,8 +478,10 @@ func (c *Client) Autocomplete(ctx context.Context, prefix string, limit int) ([]
 		return results, nil
 	}
 
+	c.cache.SetAutocomplete(prefix, resp.Data)
+
 	if len(resp.Data) > limit {
-		resp.Data = resp.Data[:limit]
+		return resp.Data[:limit], nil
 	}
 	return resp.Data, nil
 }
@@ -325,7 +494,13 @@ func (c *Client) SearchByCountry(ctx context.Context, country string, limit int)
 
 	country = strings.ToUpper(strings.TrimSpace(country))
 	if len(country) != 2 {
-		return nil, fmt.Errorf("country must be a 2-letter ISO code")
+		return nil, NewInvalidFormatError("country", "must be a 2-letter ISO code")
+	}
+
+	// Check cache
+	cacheKey := fmt.Sprintf("country:%s:%d", country, limit)
+	if records, ok := c.cache.GetSearch(cacheKey); ok {
+		return records, nil
 	}
 
 	params := url.Values{}
@@ -336,7 +511,7 @@ func (c *Client) SearchByCountry(ctx context.Context, country string, limit int)
 	c.logger.Debug("Searching by country", "country", country, "url", reqURL)
 
 	var resp APIResponse[LEIRecord]
-	if err := c.doRequest(ctx, reqURL, &resp); err != nil {
+	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
 		return nil, err
 	}
 
@@ -345,35 +520,145 @@ func (c *Client) SearchByCountry(ctx context.Context, country string, limit int)
 		records[i] = item.Attributes
 		records[i].LEI = item.ID
 	}
+
+	c.cache.SetSearch(cacheKey, records)
 	return records, nil
+}
+
+// GetLEIIssuer retrieves information about an LEI issuer (LOU).
+func (c *Client) GetLEIIssuer(ctx context.Context, issuerID string) (*LEIIssuer, error) {
+	reqURL := fmt.Sprintf("%s/lei-issuers/%s", c.baseURL, issuerID)
+	c.logger.Debug("Fetching LEI issuer", "id", issuerID, "url", reqURL)
+
+	var resp SingleResponse[LEIIssuer]
+	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
+		return nil, err
+	}
+
+	issuer := resp.Data.Attributes
+	issuer.ID = resp.Data.ID
+	return &issuer, nil
+}
+
+// ListLEIIssuers lists all LEI issuers (LOUs).
+func (c *Client) ListLEIIssuers(ctx context.Context) ([]LEIIssuer, error) {
+	reqURL := fmt.Sprintf("%s/lei-issuers", c.baseURL)
+	c.logger.Debug("Listing LEI issuers", "url", reqURL)
+
+	var resp APIResponse[LEIIssuer]
+	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
+		return nil, err
+	}
+
+	issuers := make([]LEIIssuer, len(resp.Data))
+	for i, item := range resp.Data {
+		issuers[i] = item.Attributes
+		issuers[i].ID = item.ID
+	}
+	return issuers, nil
+}
+
+// GetReportingExceptions retrieves reporting exceptions for an LEI.
+func (c *Client) GetReportingExceptions(ctx context.Context, lei string) ([]ReportingException, error) {
+	lei = strings.ToUpper(strings.TrimSpace(lei))
+	if !leiRegex.MatchString(lei) {
+		return nil, NewInvalidFormatError("LEI", "must be 20 alphanumeric characters")
+	}
+
+	reqURL := fmt.Sprintf("%s/lei-records/%s/reporting-exceptions", c.baseURL, lei)
+	c.logger.Debug("Fetching reporting exceptions", "lei", lei, "url", reqURL)
+
+	var resp APIResponse[ReportingException]
+	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
+		return nil, err
+	}
+
+	exceptions := make([]ReportingException, len(resp.Data))
+	for i, item := range resp.Data {
+		exceptions[i] = item.Attributes
+	}
+	return exceptions, nil
+}
+
+// doRequestWithRetry executes a request with rate limiting and retry logic.
+func (c *Client) doRequestWithRetry(ctx context.Context, url string, result any) error {
+	var lastErr error
+
+	for attempt := 0; attempt <= c.config.MaxRetries; attempt++ {
+		// Wait for rate limiter
+		if err := c.limiter.Wait(ctx); err != nil {
+			return NewRateLimitError(60)
+		}
+
+		err := c.doRequest(ctx, url, result)
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+
+		// Check if retryable
+		if !IsRetryable(err) {
+			return err
+		}
+
+		// Exponential backoff
+		if attempt < c.config.MaxRetries {
+			delay := c.config.RetryDelay * time.Duration(1<<attempt)
+			c.logger.Debug("Retrying request", "attempt", attempt+1, "delay", delay, "error", err)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+	}
+
+	return lastErr
 }
 
 // doRequest executes an HTTP GET request and decodes the JSON response.
 func (c *Client) doRequest(ctx context.Context, url string, result any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
+		return NewNetworkError(err)
 	}
 
 	req.Header.Set("Accept", "application/vnd.api+json")
-	req.Header.Set("User-Agent", "gleif-mcp-server/1.0")
+	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("User-Agent", "gleif-mcp-server/0.2.0")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("executing request: %w", err)
+		if ctx.Err() != nil {
+			return NewTimeoutError()
+		}
+		return NewNetworkError(err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("reading response: %w", err)
+		return NewNetworkError(err)
 	}
 
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("not found")
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// Success
+	case http.StatusNotFound:
+		return NewNotFoundError("LEI record")
+	case http.StatusTooManyRequests:
+		return NewRateLimitError(60)
+	default:
+		if resp.StatusCode >= 500 {
+			return NewServerError(resp.StatusCode, string(body))
+		}
+		return &APIError{
+			Code:       ErrCodeServerError,
+			Message:    fmt.Sprintf("API error: %s", string(body)),
+			StatusCode: resp.StatusCode,
+			Retryable:  false,
+		}
 	}
 
 	if err := json.Unmarshal(body, result); err != nil {
@@ -381,6 +666,16 @@ func (c *Client) doRequest(ctx context.Context, url string, result any) error {
 	}
 
 	return nil
+}
+
+// CacheStats returns cache performance statistics.
+func (c *Client) CacheStats() CacheStats {
+	return c.cache.Stats()
+}
+
+// ClearCache clears all cached data.
+func (c *Client) ClearCache() {
+	c.cache.Clear()
 }
 
 // validateLEICheckDigits validates the ISO 17442 check digits.

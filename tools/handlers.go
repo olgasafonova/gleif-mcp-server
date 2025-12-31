@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/olgasafonova/gleif-mcp-server/internal/gleif"
@@ -75,6 +76,8 @@ func (r *Registry) getHandler(name string) mcp.ToolHandler {
 		return r.handleLEILookup
 	case "validate_lei":
 		return r.handleValidateLEI
+	case "batch_lei_lookup":
+		return r.handleBatchLEILookup
 	case "search_entity":
 		return r.handleSearchEntity
 	case "search_by_bic":
@@ -87,6 +90,12 @@ func (r *Registry) getHandler(name string) mcp.ToolHandler {
 		return r.handleGetRelationships
 	case "autocomplete":
 		return r.handleAutocomplete
+	case "get_lei_issuer":
+		return r.handleGetLEIIssuer
+	case "list_lei_issuers":
+		return r.handleListLEIIssuers
+	case "get_reporting_exceptions":
+		return r.handleGetReportingExceptions
 	default:
 		return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return errorResult(fmt.Sprintf("Unknown tool: %s", name))
@@ -134,6 +143,48 @@ func (r *Registry) handleValidateLEI(ctx context.Context, req *mcp.CallToolReque
 	return jsonResult(result)
 }
 
+func (r *Registry) handleBatchLEILookup(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args, err := parseArguments(req)
+	if err != nil {
+		return errorResult(err.Error())
+	}
+
+	leisStr, ok := args["leis"].(string)
+	if !ok || leisStr == "" {
+		return errorResult("leis parameter is required")
+	}
+
+	// Parse comma-separated LEIs
+	leis := strings.Split(leisStr, ",")
+	for i, lei := range leis {
+		leis[i] = strings.TrimSpace(lei)
+	}
+
+	records, err := r.client.GetBatchLEI(ctx, leis)
+	if err != nil {
+		return errorResult(fmt.Sprintf("Batch lookup failed: %v", err))
+	}
+
+	// Return simplified results
+	results := make([]map[string]any, len(records))
+	for i, rec := range records {
+		results[i] = map[string]any{
+			"lei":       rec.LEI,
+			"legalName": rec.Entity.LegalName.Name,
+			"country":   rec.Entity.LegalAddress.Country,
+			"city":      rec.Entity.LegalAddress.City,
+			"status":    rec.Entity.Status,
+			"regStatus": rec.Registration.Status,
+		}
+	}
+
+	return jsonResult(map[string]any{
+		"requested": len(leis),
+		"found":     len(results),
+		"results":   results,
+	})
+}
+
 func (r *Registry) handleSearchEntity(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args, err := parseArguments(req)
 	if err != nil {
@@ -150,6 +201,11 @@ func (r *Registry) handleSearchEntity(ctx context.Context, req *mcp.CallToolRequ
 		limit = int(l)
 	}
 
+	page := 1
+	if p, ok := args["page"].(float64); ok {
+		page = int(p)
+	}
+
 	// Default to fuzzy search
 	fuzzy := true
 	if f, ok := args["fuzzy"].(bool); ok {
@@ -157,12 +213,13 @@ func (r *Registry) handleSearchEntity(ctx context.Context, req *mcp.CallToolRequ
 	}
 
 	var records []gleif.LEIRecord
+	var pagination *gleif.Pagination
 	var searchErr error
 
 	if fuzzy {
-		records, searchErr = r.client.FuzzySearch(ctx, query, limit)
+		records, pagination, searchErr = r.client.FuzzySearch(ctx, query, limit, page)
 	} else {
-		records, searchErr = r.client.SearchEntities(ctx, query, limit)
+		records, pagination, searchErr = r.client.SearchEntities(ctx, query, limit, page)
 	}
 
 	if searchErr != nil {
@@ -182,10 +239,23 @@ func (r *Registry) handleSearchEntity(ctx context.Context, req *mcp.CallToolRequ
 		}
 	}
 
-	return jsonResult(map[string]any{
+	response := map[string]any{
 		"count":   len(results),
 		"results": results,
-	})
+	}
+
+	// Add pagination info if available
+	if pagination != nil {
+		response["pagination"] = map[string]any{
+			"currentPage": pagination.CurrentPage,
+			"perPage":     pagination.PerPage,
+			"total":       pagination.Total,
+			"lastPage":    pagination.LastPage,
+		}
+		response["hasMore"] = pagination.CurrentPage < pagination.LastPage
+	}
+
+	return jsonResult(response)
 }
 
 func (r *Registry) handleSearchByBIC(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -339,6 +409,60 @@ func (r *Registry) handleAutocomplete(ctx context.Context, req *mcp.CallToolRequ
 	return jsonResult(map[string]any{
 		"prefix":      prefix,
 		"suggestions": suggestions,
+	})
+}
+
+func (r *Registry) handleGetLEIIssuer(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args, err := parseArguments(req)
+	if err != nil {
+		return errorResult(err.Error())
+	}
+
+	issuerID, ok := args["issuer_id"].(string)
+	if !ok || issuerID == "" {
+		return errorResult("issuer_id parameter is required")
+	}
+
+	issuer, err := r.client.GetLEIIssuer(ctx, issuerID)
+	if err != nil {
+		return errorResult(fmt.Sprintf("Failed to fetch LEI issuer: %v", err))
+	}
+
+	return jsonResult(issuer)
+}
+
+func (r *Registry) handleListLEIIssuers(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	issuers, err := r.client.ListLEIIssuers(ctx)
+	if err != nil {
+		return errorResult(fmt.Sprintf("Failed to list LEI issuers: %v", err))
+	}
+
+	return jsonResult(map[string]any{
+		"count":   len(issuers),
+		"issuers": issuers,
+	})
+}
+
+func (r *Registry) handleGetReportingExceptions(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args, err := parseArguments(req)
+	if err != nil {
+		return errorResult(err.Error())
+	}
+
+	lei, ok := args["lei"].(string)
+	if !ok || lei == "" {
+		return errorResult("lei parameter is required")
+	}
+
+	exceptions, err := r.client.GetReportingExceptions(ctx, lei)
+	if err != nil {
+		return errorResult(fmt.Sprintf("Failed to fetch reporting exceptions: %v", err))
+	}
+
+	return jsonResult(map[string]any{
+		"lei":        lei,
+		"count":      len(exceptions),
+		"exceptions": exceptions,
 	})
 }
 

@@ -68,6 +68,26 @@ RETURNS: Valid (bool), registration status, entity status, next renewal date.`,
 		},
 	},
 
+	{
+		Name:     "batch_lei_lookup",
+		Title:    "Batch LEI Lookup",
+		Category: "lookup",
+		ReadOnly: true,
+		Description: `Look up multiple LEI records in one request.
+
+USE WHEN: User has a list of LEIs to look up, or wants bulk validation.
+
+PARAMETERS:
+- leis: Comma-separated list of LEI codes (required, max 100)
+
+RETURNS: Array of full entity details for each valid LEI.
+
+EXAMPLE: batch_lei_lookup with leis="HWUPKR0MPOU8FGXBT394,5493006MHB84DD0ZWV18"`,
+		Parameters: []ParameterSpec{
+			{Name: "leis", Type: "string", Description: "Comma-separated LEI codes (max 100)", Required: true},
+		},
+	},
+
 	// =========================================================================
 	// Search Tools
 	// =========================================================================
@@ -76,21 +96,23 @@ RETURNS: Valid (bool), registration status, entity status, next renewal date.`,
 		Title:    "Search Entities",
 		Category: "search",
 		ReadOnly: true,
-		Description: `Search for legal entities by name.
+		Description: `Search for legal entities by name with pagination.
 
 USE WHEN: User asks "find company X", "search for X", "look up company X"
 
 PARAMETERS:
 - query: Company name to search for (required)
-- limit: Max results to return (default 20, max 100)
+- limit: Max results per page (default 20, max 100)
+- page: Page number for pagination (default 1)
 - fuzzy: Use fuzzy matching (default true, better for partial names)
 
-RETURNS: List of matching entities with LEI, name, country, and status.
+RETURNS: List of matching entities with LEI, name, country, status, plus pagination info (total, hasMore).
 
 EXAMPLE: search_entity with query="Apple" returns Apple Inc., Apple Bank, etc.`,
 		Parameters: []ParameterSpec{
 			{Name: "query", Type: "string", Description: "Company name to search", Required: true},
-			{Name: "limit", Type: "integer", Description: "Max results (default 20)", Required: false},
+			{Name: "limit", Type: "integer", Description: "Max results per page (default 20)", Required: false},
+			{Name: "page", Type: "integer", Description: "Page number (default 1)", Required: false},
 			{Name: "fuzzy", Type: "boolean", Description: "Use fuzzy matching (default true)", Required: false},
 		},
 	},
@@ -163,9 +185,9 @@ RETURNS: List of entities in that country.`,
 		Title:    "Get Relationships",
 		Category: "ownership",
 		ReadOnly: true,
-		Description: `Get corporate ownership relationships for an entity.
+		Description: `Get corporate ownership and fund relationships for an entity.
 
-USE WHEN: User asks "who owns X?", "parent company of X", "subsidiaries of X"
+USE WHEN: User asks "who owns X?", "parent company of X", "subsidiaries of X", "fund manager of X"
 
 PARAMETERS:
 - lei: LEI of the entity (required)
@@ -173,13 +195,16 @@ PARAMETERS:
   - "direct-parent": Immediate parent company
   - "ultimate-parent": Top of the ownership chain
   - "children": Direct subsidiaries
+  - "fund-manager": Fund management relationship
+  - "umbrella-fund": Umbrella fund relationship
+  - "sub-funds": Sub-fund relationships
 
 RETURNS: List of related entities with relationship details.
 
 EXAMPLE: get_relationships with lei="HWUPKR0MPOU8FGXBT394" returns Apple Inc.'s parent/child entities.`,
 		Parameters: []ParameterSpec{
 			{Name: "lei", Type: "string", Description: "LEI code", Required: true},
-			{Name: "type", Type: "string", Description: "Relationship type", Required: false, Enum: []string{"direct-parent", "ultimate-parent", "children"}},
+			{Name: "type", Type: "string", Description: "Relationship type", Required: false, Enum: []string{"direct-parent", "ultimate-parent", "children", "fund-manager", "umbrella-fund", "sub-funds"}},
 		},
 	},
 
@@ -203,6 +228,67 @@ RETURNS: List of matching entity names with LEI codes.`,
 		Parameters: []ParameterSpec{
 			{Name: "prefix", Type: "string", Description: "Name prefix to complete", Required: true},
 			{Name: "limit", Type: "integer", Description: "Max suggestions (default 10)", Required: false},
+		},
+	},
+
+	// =========================================================================
+	// LEI Issuer Tools
+	// =========================================================================
+	{
+		Name:     "get_lei_issuer",
+		Title:    "Get LEI Issuer Details",
+		Category: "issuers",
+		ReadOnly: true,
+		Description: `Get details about an LEI issuer (Local Operating Unit / LOU).
+
+USE WHEN: User asks "who issued this LEI?", "details about LOU X"
+
+PARAMETERS:
+- issuer_id: LEI issuer ID (required, e.g., "EVK05KS7XY1DEII3R011")
+
+RETURNS: Issuer name, country, status, website, number of sponsored LEIs.`,
+		Parameters: []ParameterSpec{
+			{Name: "issuer_id", Type: "string", Description: "LEI issuer ID", Required: true},
+		},
+	},
+
+	{
+		Name:     "list_lei_issuers",
+		Title:    "List All LEI Issuers",
+		Category: "issuers",
+		ReadOnly: true,
+		Description: `List all LEI issuers (Local Operating Units / LOUs).
+
+USE WHEN: User asks "list all LOUs", "what LEI issuers exist?", "show all issuers"
+
+RETURNS: Array of all LEI issuers with name, country, and status.`,
+		Parameters: []ParameterSpec{},
+	},
+
+	// =========================================================================
+	// Reporting & Compliance Tools
+	// =========================================================================
+	{
+		Name:     "get_reporting_exceptions",
+		Title:    "Get Reporting Exceptions",
+		Category: "compliance",
+		ReadOnly: true,
+		Description: `Get Level 2 reporting exceptions for an entity.
+
+USE WHEN: User asks "why is parent info missing?", "reporting exceptions for X"
+
+Level 2 data (parent relationships) may be missing due to valid exceptions:
+- NON_CONSOLIDATING: Parent doesn't consolidate
+- NO_KNOWN_PERSON: Natural person control
+- NATURAL_PERSONS: Controlled by natural persons
+- NON_PUBLIC: Non-public information
+
+PARAMETERS:
+- lei: LEI code to check (required)
+
+RETURNS: List of reporting exceptions with category and reason.`,
+		Parameters: []ParameterSpec{
+			{Name: "lei", Type: "string", Description: "LEI code", Required: true},
 		},
 	},
 }
