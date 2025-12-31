@@ -2,7 +2,9 @@
 
 A Model Context Protocol (MCP) server for accessing the Global Legal Entity Identifier (LEI) database via GLEIF's public API.
 
+[![CI](https://github.com/olgasafonova/gleif-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/olgasafonova/gleif-mcp-server/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/olgasafonova/gleif-mcp-server)](https://goreportcard.com/report/github.com/olgasafonova/gleif-mcp-server)
+[![Go Version](https://img.shields.io/badge/Go-1.23-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## What is LEI?
