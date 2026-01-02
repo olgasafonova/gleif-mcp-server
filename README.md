@@ -377,12 +377,14 @@ gleif-mcp-server/
 ├── main.go                 # Entry point, MCP server setup
 ├── internal/gleif/
 │   ├── client.go          # GLEIF API client with caching & rate limiting
+│   ├── client_test.go     # Client and validation tests
 │   ├── cache.go           # LRU cache with TTL
 │   ├── types.go           # Data structures for API responses
 │   └── errors.go          # Structured error types
 └── tools/
     ├── definitions.go     # Tool metadata and parameter specs
-    └── handlers.go        # MCP tool implementations
+    ├── handlers.go        # MCP tool implementations
+    └── handlers_test.go   # Handler tests with mock server
 ```
 
 ### Technical Details
@@ -427,6 +429,23 @@ This server wraps the public GLEIF API:
 - Restart Claude Desktop after editing config
 - Check JSON syntax in config file
 - Verify the binary path exists and is executable
+
+## Development
+
+```bash
+# Run tests
+go test ./...
+
+# Run tests with coverage
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+
+# Run tests with race detector
+go test -race ./...
+
+# Build
+go build -o gleif-mcp-server .
+```
 
 ## Contributing
 
