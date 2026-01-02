@@ -123,7 +123,7 @@ func TestHandleLEILookup(t *testing.T) {
 		ts.mux.HandleFunc("/lei-records/HWUPKR0MPOU8FGXBT394", func(w http.ResponseWriter, r *http.Request) {
 			resp := mockLEIResponse("HWUPKR0MPOU8FGXBT394", "Apple Inc.", "US", "Cupertino")
 			w.Header().Set("Content-Type", "application/vnd.api+json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
@@ -195,7 +195,7 @@ func TestHandleValidateLEI(t *testing.T) {
 		ts.mux.HandleFunc("/lei-records/HWUPKR0MPOU8FGXBT394", func(w http.ResponseWriter, r *http.Request) {
 			resp := mockLEIResponse("HWUPKR0MPOU8FGXBT394", "Apple Inc.", "US", "Cupertino")
 			w.Header().Set("Content-Type", "application/vnd.api+json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
@@ -265,7 +265,7 @@ func TestHandleBatchLEILookup(t *testing.T) {
 				},
 			)
 			w.Header().Set("Content-Type", "application/vnd.api+json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
@@ -326,7 +326,7 @@ func TestHandleSearchEntity(t *testing.T) {
 				},
 			)
 			w.Header().Set("Content-Type", "application/vnd.api+json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
@@ -353,7 +353,7 @@ func TestHandleSearchEntity(t *testing.T) {
 		ts.mux.HandleFunc("/lei-records", func(w http.ResponseWriter, r *http.Request) {
 			resp := mockSearchResponse()
 			w.Header().Set("Content-Type", "application/vnd.api+json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
@@ -401,7 +401,7 @@ func TestHandleSearchByBIC(t *testing.T) {
 				},
 			)
 			w.Header().Set("Content-Type", "application/vnd.api+json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
@@ -428,7 +428,7 @@ func TestHandleSearchByBIC(t *testing.T) {
 		ts.mux.HandleFunc("/lei-records", func(w http.ResponseWriter, r *http.Request) {
 			resp := mockSearchResponse()
 			w.Header().Set("Content-Type", "application/vnd.api+json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
@@ -489,7 +489,7 @@ func TestHandleSearchByISIN(t *testing.T) {
 				},
 			)
 			w.Header().Set("Content-Type", "application/vnd.api+json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
@@ -545,7 +545,7 @@ func TestHandleSearchByCountry(t *testing.T) {
 				},
 			)
 			w.Header().Set("Content-Type", "application/vnd.api+json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
@@ -603,7 +603,7 @@ func TestHandleGetRelationships(t *testing.T) {
 				Data []any `json:"data"`
 			}{Data: []any{}}
 			w.Header().Set("Content-Type", "application/vnd.api+json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
@@ -659,7 +659,7 @@ func TestHandleAutocomplete(t *testing.T) {
 				},
 			)
 			w.Header().Set("Content-Type", "application/vnd.api+json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
@@ -712,7 +712,7 @@ func TestHandleGetLEIIssuer(t *testing.T) {
 				},
 			}
 			w.Header().Set("Content-Type", "application/vnd.api+json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
@@ -766,7 +766,7 @@ func TestHandleListLEIIssuers(t *testing.T) {
 				},
 			}
 			w.Header().Set("Content-Type", "application/vnd.api+json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
@@ -798,7 +798,7 @@ func TestHandleGetReportingExceptions(t *testing.T) {
 				Data: []gleif.DataItem[gleif.ReportingException]{},
 			}
 			w.Header().Set("Content-Type", "application/vnd.api+json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
