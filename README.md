@@ -3,7 +3,7 @@
 A Model Context Protocol (MCP) server for accessing the Global Legal Entity Identifier (LEI) database via GLEIF's public API.
 
 [![CI](https://github.com/olgasafonova/gleif-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/olgasafonova/gleif-mcp-server/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/olgasafonova/gleif-mcp-server)](https://goreportcard.com/report/github.com/olgasafonova/gleif-mcp-server)
+[![Go Report Card](https://goreportcard.com/badge/github.com/olgasafonova/gleif-mcp-server?v=2)](https://goreportcard.com/report/github.com/olgasafonova/gleif-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **What this does:** Gives your AI assistant the ability to look up company identities, verify legal entities, and explore corporate ownership structures using the official GLEIF database. Works with Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, and other MCP-compatible tools. Ask questions in plain English; get structured answers instantly.
