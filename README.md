@@ -455,6 +455,18 @@ Contributions welcome. Please open an issue first to discuss proposed changes.
 
 MIT License - see [LICENSE](LICENSE) for details.
 
+## More MCP Servers
+
+Check out my other MCP servers:
+
+| Server | Description | Stars |
+|--------|-------------|-------|
+| [miro-mcp-server](https://github.com/olgasafonova/miro-mcp-server) | Control Miro whiteboards with AI. 76 tools for boards, diagrams, mindmaps. | ![GitHub stars](https://img.shields.io/github/stars/olgasafonova/miro-mcp-server?style=flat) |
+| [mediawiki-mcp-server](https://github.com/olgasafonova/mediawiki-mcp-server) | Connect AI to any MediaWiki wiki. Search, read, edit wiki content. | ![GitHub stars](https://img.shields.io/github/stars/olgasafonova/mediawiki-mcp-server?style=flat) |
+| [productplan-mcp-server](https://github.com/olgasafonova/productplan-mcp-server) | Talk to your ProductPlan roadmaps. Query OKRs, ideas, launches. | ![GitHub stars](https://img.shields.io/github/stars/olgasafonova/productplan-mcp-server?style=flat) |
+
+---
+
 ## Acknowledgments
 
 - [GLEIF](https://www.gleif.org/) for the public LEI API
