@@ -10,3 +10,12 @@ dist/
 
 # OS
 .DS_Store
+
+# Claude Code
+.mcp.json
+.mcpregistry_*
+
+# Test artifacts
+coverage.out
+coverage.html
+*.log
