@@ -1,0 +1,166 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Get version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: Build MCPB bundles
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p dist/mcpb
+
+          platforms=(
+            "darwin arm64 darwin-arm64 darwin"
+            "darwin amd64 darwin-amd64 darwin"
+            "linux amd64 linux-amd64 linux"
+            "linux arm64 linux-arm64 linux"
+            "windows amd64 windows-amd64 win32"
+          )
+
+          for platform in "${platforms[@]}"; do
+            read -r GOOS GOARCH suffix mcpb_platform <<< "$platform"
+
+            binary_name="gleif-mcp-server"
+            if [ "$GOOS" = "windows" ]; then
+              binary_name="gleif-mcp-server.exe"
+            fi
+
+            bundle_dir="dist/mcpb/gleif-mcp-server-$suffix"
+            mkdir -p "$bundle_dir"
+
+            echo "Building $GOOS/$GOARCH..."
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w" -o "$bundle_dir/$binary_name" .
+
+            # Create platform-specific manifest
+            jq --arg platform "$mcpb_platform" --arg version "$VERSION" \
+               '.compatibility.platforms = [$platform] | .version = $version' \
+               manifest.json > "$bundle_dir/manifest.json"
+
+            # Create .mcpb bundle (zip)
+            (cd "$bundle_dir" && zip -r "../gleif-mcp-server-$suffix.mcpb" .)
+
+            # Cleanup temp directory
+            rm -rf "$bundle_dir"
+          done
+
+          echo "MCPB bundles created:"
+          ls -la dist/mcpb/
+
+      - name: Calculate SHA256 hashes
+        id: hashes
+        run: |
+          cd dist/mcpb
+
+          darwin_arm64=$(sha256sum gleif-mcp-server-darwin-arm64.mcpb | cut -d' ' -f1)
+          darwin_amd64=$(sha256sum gleif-mcp-server-darwin-amd64.mcpb | cut -d' ' -f1)
+          linux_amd64=$(sha256sum gleif-mcp-server-linux-amd64.mcpb | cut -d' ' -f1)
+          linux_arm64=$(sha256sum gleif-mcp-server-linux-arm64.mcpb | cut -d' ' -f1)
+          windows_amd64=$(sha256sum gleif-mcp-server-windows-amd64.mcpb | cut -d' ' -f1)
+
+          echo "darwin_arm64=$darwin_arm64" >> $GITHUB_OUTPUT
+          echo "darwin_amd64=$darwin_amd64" >> $GITHUB_OUTPUT
+          echo "linux_amd64=$linux_amd64" >> $GITHUB_OUTPUT
+          echo "linux_arm64=$linux_arm64" >> $GITHUB_OUTPUT
+          echo "windows_amd64=$windows_amd64" >> $GITHUB_OUTPUT
+
+          echo "SHA256 hashes:"
+          sha256sum *.mcpb
+
+      - name: Generate server.json
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${GITHUB_REF_NAME}"
+
+          cat > dist/server.json << EOF
+          {
+            "\$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+            "name": "io.github.olgasafonova/gleif-mcp-server",
+            "title": "GLEIF MCP Server",
+            "description": "Access the GLEIF LEI database for company verification, KYC, and ownership research.",
+            "version": "$VERSION",
+            "websiteUrl": "https://github.com/olgasafonova/gleif-mcp-server",
+            "repository": {
+              "url": "https://github.com/olgasafonova/gleif-mcp-server",
+              "source": "github"
+            },
+            "packages": [
+              {
+                "registryType": "mcpb",
+                "identifier": "https://github.com/olgasafonova/gleif-mcp-server/releases/download/$TAG/gleif-mcp-server-darwin-arm64.mcpb",
+                "version": "$VERSION",
+                "fileSha256": "${{ steps.hashes.outputs.darwin_arm64 }}",
+                "transport": {"type": "stdio"}
+              },
+              {
+                "registryType": "mcpb",
+                "identifier": "https://github.com/olgasafonova/gleif-mcp-server/releases/download/$TAG/gleif-mcp-server-darwin-amd64.mcpb",
+                "version": "$VERSION",
+                "fileSha256": "${{ steps.hashes.outputs.darwin_amd64 }}",
+                "transport": {"type": "stdio"}
+              },
+              {
+                "registryType": "mcpb",
+                "identifier": "https://github.com/olgasafonova/gleif-mcp-server/releases/download/$TAG/gleif-mcp-server-linux-amd64.mcpb",
+                "version": "$VERSION",
+                "fileSha256": "${{ steps.hashes.outputs.linux_amd64 }}",
+                "transport": {"type": "stdio"}
+              },
+              {
+                "registryType": "mcpb",
+                "identifier": "https://github.com/olgasafonova/gleif-mcp-server/releases/download/$TAG/gleif-mcp-server-linux-arm64.mcpb",
+                "version": "$VERSION",
+                "fileSha256": "${{ steps.hashes.outputs.linux_arm64 }}",
+                "transport": {"type": "stdio"}
+              },
+              {
+                "registryType": "mcpb",
+                "identifier": "https://github.com/olgasafonova/gleif-mcp-server/releases/download/$TAG/gleif-mcp-server-windows-amd64.mcpb",
+                "version": "$VERSION",
+                "fileSha256": "${{ steps.hashes.outputs.windows_amd64 }}",
+                "transport": {"type": "stdio"}
+              }
+            ]
+          }
+          EOF
+
+          echo "Generated server.json:"
+          cat dist/server.json
+
+      - name: Upload MCPB bundles to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" dist/mcpb/*.mcpb --clobber
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher-linux-amd64.tar.gz | tar xz
+          chmod +x mcp-publisher
+          ./mcp-publisher --version
+
+      - name: Publish to MCP Registry
+        run: |
+          cd dist
+          ../mcp-publisher publish --oidc github
