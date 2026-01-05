@@ -11,6 +11,12 @@
   },
   "packages": [
     {
+      "registryType": "oci",
+      "identifier": "ghcr.io/olgasafonova/gleif-mcp-server:0.5.0",
+      "version": "0.5.0",
+      "transport": {"type": "stdio"}
+    },
+    {
       "registryType": "mcpb",
       "identifier": "https://github.com/olgasafonova/gleif-mcp-server/releases/download/v0.5.0/gleif-mcp-server-darwin-arm64.mcpb",
       "version": "0.5.0",

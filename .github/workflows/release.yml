@@ -107,6 +107,12 @@ jobs:
             },
             "packages": [
               {
+                "registryType": "oci",
+                "identifier": "ghcr.io/olgasafonova/gleif-mcp-server:$VERSION",
+                "version": "$VERSION",
+                "transport": {"type": "stdio"}
+              },
+              {
                 "registryType": "mcpb",
                 "identifier": "https://github.com/olgasafonova/gleif-mcp-server/releases/download/$TAG/gleif-mcp-server-darwin-arm64.mcpb",
                 "version": "$VERSION",
