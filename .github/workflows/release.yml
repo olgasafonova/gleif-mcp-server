@@ -162,5 +162,6 @@ jobs:
 
       - name: Publish to MCP Registry
         run: |
+          ./mcp-publisher login github-oidc
           cd dist
-          ../mcp-publisher publish --oidc github
+          ../mcp-publisher publish
