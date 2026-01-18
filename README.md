@@ -93,19 +93,74 @@ go install github.com/olgasafonova/gleif-mcp-server@latest
 
 ### Claude Desktop
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+#### Step 1: Download the binary
 
+Go to the [releases page](https://github.com/olgasafonova/gleif-mcp-server/releases) and download the binary for your system:
+- **Mac (Apple Silicon M1/M2/M3/M4):** `gleif-mcp-server-darwin-arm64`
+- **Mac (Intel):** `gleif-mcp-server-darwin-amd64`
+- **Windows:** `gleif-mcp-server-windows-amd64.exe`
+
+#### Step 2: Mac only - allow the file to run
+
+macOS blocks downloaded files. Open Terminal and run:
+
+```bash
+chmod +x ~/Downloads/gleif-mcp-server-darwin-arm64
+xattr -d com.apple.quarantine ~/Downloads/gleif-mcp-server-darwin-arm64
+```
+
+#### Step 3: Open the config file
+
+**Mac:** Open Finder, press `Cmd + Shift + G`, paste this path:
+```
+~/Library/Application Support/Claude/
+```
+
+**Windows:** Press `Win + R`, paste this path:
+```
+%APPDATA%\Claude
+```
+
+Open `claude_desktop_config.json`. If it doesn't exist, create it.
+
+#### Step 4: Add the config
+
+**Mac** (replace YOUR_USERNAME with your actual username):
 ```json
 {
   "mcpServers": {
     "gleif": {
-      "command": "/path/to/gleif-mcp-server"
+      "command": "/Users/YOUR_USERNAME/Downloads/gleif-mcp-server-darwin-arm64"
     }
   }
 }
 ```
 
-Restart Claude Desktop after editing the config.
+**Windows** (replace YOUR_USERNAME - note the double backslashes):
+```json
+{
+  "mcpServers": {
+    "gleif": {
+      "command": "C:\\Users\\YOUR_USERNAME\\Downloads\\gleif-mcp-server-windows-amd64.exe"
+    }
+  }
+}
+```
+
+To find your username: Mac - open Terminal and type `whoami`. Windows - look at `C:\Users\`.
+
+#### Step 5: Restart Claude Desktop
+
+Quit completely (`Cmd + Q` on Mac) and reopen.
+
+#### Step 6: Test it
+
+Type in Claude Desktop:
+```
+Look up Apple's LEI using GLEIF
+```
+
+You should see Claude call the GLEIF tool and return company data.
 
 ### Claude Code (CLI)
 
