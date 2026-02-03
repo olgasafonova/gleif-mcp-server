@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server for accessing the Global Legal Entity Iden
 [![Go Report Card](https://goreportcard.com/badge/github.com/olgasafonova/gleif-mcp-server?v=2)](https://goreportcard.com/report/github.com/olgasafonova/gleif-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**What this does:** Gives your AI assistant the ability to look up company identities, verify legal entities, and explore corporate ownership structures using the official GLEIF database. Works with Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, and other MCP-compatible tools. Ask questions in plain English; get structured answers instantly.
+**What this does:** Gives your AI assistant the ability to look up company identities, verify legal entities, and explore corporate ownership structures using the official GLEIF database. Works with Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, Antigravity, and other MCP-compatible tools. Ask questions in plain English; get structured answers instantly.
 
 ## Use Cases
 
@@ -230,6 +230,20 @@ Add via Cline's MCP settings or in `.vscode/cline_mcp_settings.json`:
     "gleif": {
       "command": "/path/to/gleif-mcp-server",
       "args": []
+    }
+  }
+}
+```
+
+### Antigravity
+
+Add to `~/.antigravity/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "gleif": {
+      "command": "/path/to/gleif-mcp-server"
     }
   }
 }
