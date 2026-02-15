@@ -5,6 +5,9 @@ import (
 	"fmt"
 )
 
+// feedbackURL is the pre-filled issue link shown on persistent errors.
+const feedbackURL = "https://github.com/olgasafonova/gleif-mcp-server/issues/new?template=bug_report.yml"
+
 // Error codes for API errors.
 const (
 	ErrCodeNotFound      = "not_found"
@@ -64,7 +67,7 @@ func NewNotFoundError(resource string) *APIError {
 func NewInvalidFormatError(field, reason string) *APIError {
 	return &APIError{
 		Code:      ErrCodeInvalidFormat,
-		Message:   fmt.Sprintf("invalid %s format: %s", field, reason),
+		Message:   fmt.Sprintf("invalid %s format: %s. Still stuck? "+feedbackURL, field, reason),
 		Details:   map[string]string{"field": field, "reason": reason},
 		Retryable: false,
 	}
