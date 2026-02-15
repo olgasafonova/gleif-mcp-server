@@ -30,21 +30,18 @@ var AllTools = []ToolSpec{
 		Title:       "Get LEI Details",
 		Category:    "lookup",
 		ReadOnly:    true,
-		Description: `Get full details for a specific LEI code (legal name, address, jurisdiction, status, managing LOU, renewal dates).`,
+		Description: `Get full details for a specific LEI code (legal name, address, jurisdiction, status, managing LOU, renewal dates). USE WHEN: "look up LEI", "LEI details", "who is HWUPKR0MPOU8FGXBT394?" For validating format and status only, use validate_lei. For multiple LEIs at once, use batch_lei_lookup.`,
 		Parameters: []ParameterSpec{
 			{Name: "lei", Type: "string", Description: "20-character LEI code", Required: true},
 		},
 	},
 
 	{
-		Name:     "validate_lei",
-		Title:    "Validate LEI",
-		Category: "validation",
-		ReadOnly: true,
-		Description: `Check if an LEI code is valid and active. Performs three checks:
-1. Format validation (20 alphanumeric characters)
-2. Check digit validation (ISO 17442)
-3. Database lookup (confirms existence and checks status)`,
+		Name:        "validate_lei",
+		Title:       "Validate LEI",
+		Category:    "validation",
+		ReadOnly:    true,
+		Description: `Check if an LEI code is valid and active. USE WHEN: "is this LEI valid?", "verify LEI", "check LEI format". Performs format (20 chars), check digit (ISO 17442), and database status checks. For full entity details, use lei_lookup instead.`,
 		Parameters: []ParameterSpec{
 			{Name: "lei", Type: "string", Description: "LEI code to validate", Required: true},
 		},
@@ -55,7 +52,7 @@ var AllTools = []ToolSpec{
 		Title:       "Batch LEI Lookup",
 		Category:    "lookup",
 		ReadOnly:    true,
-		Description: `Look up multiple LEI records in one request (max 100, comma-separated).`,
+		Description: `Look up multiple LEI records in one request (max 100). USE WHEN: "look up these LEIs", "batch lookup", user provides 2+ LEI codes. Faster than calling lei_lookup repeatedly.`,
 		Parameters: []ParameterSpec{
 			{Name: "leis", Type: "string", Description: "Comma-separated LEI codes (max 100)", Required: true},
 		},
@@ -85,7 +82,7 @@ USE WHEN: "find company X", "search for X", "look up company X"`,
 		Title:       "Search by BIC/SWIFT",
 		Category:    "search",
 		ReadOnly:    true,
-		Description: `Find a bank's LEI from its BIC/SWIFT code (8 or 11 characters).`,
+		Description: `Find a bank's LEI from its BIC/SWIFT code (8 or 11 characters). USE WHEN: "find LEI from BIC", "BIC to LEI", "SWIFT code lookup", user provides a BIC code.`,
 		Parameters: []ParameterSpec{
 			{Name: "bic", Type: "string", Description: "BIC/SWIFT code (8 or 11 chars)", Required: true},
 		},
@@ -96,7 +93,7 @@ USE WHEN: "find company X", "search for X", "look up company X"`,
 		Title:       "Search by ISIN",
 		Category:    "search",
 		ReadOnly:    true,
-		Description: `Find the issuer's LEI from a securities ISIN code (12 characters).`,
+		Description: `Find the issuer's LEI from a securities ISIN code (12 characters). USE WHEN: "who issued ISIN US0378331005?", "ISIN to LEI", user provides an ISIN.`,
 		Parameters: []ParameterSpec{
 			{Name: "isin", Type: "string", Description: "12-character ISIN code", Required: true},
 		},
@@ -107,7 +104,7 @@ USE WHEN: "find company X", "search for X", "look up company X"`,
 		Title:       "Search by Country",
 		Category:    "search",
 		ReadOnly:    true,
-		Description: `List entities registered in a specific country by ISO 2-letter code (e.g., US, GB, DE).`,
+		Description: `List entities registered in a specific country. USE WHEN: "companies in Germany", "LEIs from US", "entities in country X". Pass ISO 2-letter code (US, GB, DE).`,
 		Parameters: []ParameterSpec{
 			{Name: "country", Type: "string", Description: "2-letter ISO country code", Required: true},
 			{Name: "limit", Type: "integer", Description: "Max results (default 20)", Required: false},
@@ -156,7 +153,7 @@ Types: direct-parent, ultimate-parent, children, fund-manager, umbrella-fund, su
 		Title:       "Get LEI Issuer Details",
 		Category:    "issuers",
 		ReadOnly:    true,
-		Description: `Get details about an LEI issuer (Local Operating Unit / LOU) including name, country, status, and sponsored LEI count.`,
+		Description: `Get details about a specific LEI issuer (Local Operating Unit / LOU) by ID. USE WHEN: "details on this LOU", "issuer info". Returns name, country, status, and sponsored LEI count. For all issuers worldwide, use list_lei_issuers.`,
 		Parameters: []ParameterSpec{
 			{Name: "issuer_id", Type: "string", Description: "LEI issuer ID", Required: true},
 		},
@@ -167,7 +164,7 @@ Types: direct-parent, ultimate-parent, children, fund-manager, umbrella-fund, su
 		Title:       "List All LEI Issuers",
 		Category:    "issuers",
 		ReadOnly:    true,
-		Description: `List all LEI issuers (Local Operating Units / LOUs) worldwide with name, country, and status.`,
+		Description: `List all LEI issuers (Local Operating Units / LOUs) worldwide. USE WHEN: "show all LOUs", "which organizations issue LEIs?", "LEI issuer directory". Returns name, country, status for each. For one specific issuer, use get_lei_issuer.`,
 		Parameters:  []ParameterSpec{},
 	},
 
@@ -175,13 +172,11 @@ Types: direct-parent, ultimate-parent, children, fund-manager, umbrella-fund, su
 	// Reporting & Compliance Tools
 	// =========================================================================
 	{
-		Name:     "get_reporting_exceptions",
-		Title:    "Get Reporting Exceptions",
-		Category: "compliance",
-		ReadOnly: true,
-		Description: `Get Level 2 reporting exceptions for an entity. Explains why parent relationship data may be missing.
-
-Exception types: NON_CONSOLIDATING, NO_KNOWN_PERSON, NATURAL_PERSONS, NON_PUBLIC.`,
+		Name:        "get_reporting_exceptions",
+		Title:       "Get Reporting Exceptions",
+		Category:    "compliance",
+		ReadOnly:    true,
+		Description: `Explains why parent/ownership data may be missing for an entity. USE WHEN: "why no parent info?", "reporting exceptions", "missing ownership data". Returns Level 2 exception types: NON_CONSOLIDATING, NO_KNOWN_PERSON, NATURAL_PERSONS, NON_PUBLIC.`,
 		Parameters: []ParameterSpec{
 			{Name: "lei", Type: "string", Description: "LEI code", Required: true},
 		},
