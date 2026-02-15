@@ -1,12 +1,12 @@
 # GLEIF MCP Server
 
-A Model Context Protocol (MCP) server for accessing the Global Legal Entity Identifier (LEI) database via GLEIF's public API.
+Verify any company's legal identity in one question. Look up LEI codes, validate counterparties, and trace corporate ownership structures using the official GLEIF database. Covers 2.8M+ entities across 200+ jurisdictions.
 
 [![CI](https://github.com/olgasafonova/gleif-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/olgasafonova/gleif-mcp-server/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/olgasafonova/gleif-mcp-server?v=2)](https://goreportcard.com/report/github.com/olgasafonova/gleif-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**What this does:** Gives your AI assistant the ability to look up company identities, verify legal entities, and explore corporate ownership structures using the official GLEIF database. Works with Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, Antigravity, and other MCP-compatible tools. Ask questions in plain English; get structured answers instantly.
+**29 tools** for LEI lookup, entity search, BIC/SWIFT cross-referencing, corporate ownership, and batch validation. Works with Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, and other MCP-compatible tools.
 
 ## Use Cases
 
@@ -248,6 +248,8 @@ Add to `~/.antigravity/mcp.json`:
   }
 }
 ```
+
+> **Not working?** [Tell us what made it hard](https://github.com/olgasafonova/gleif-mcp-server/issues/new?template=bug_report.yml) — even one sentence helps.
 
 ## Tools Reference
 
