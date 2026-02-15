@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -63,11 +64,17 @@ func (r *Registry) registerTool(server *mcp.Server, spec ToolSpec) {
 		inputSchema["required"] = required
 	}
 
+	handler := r.getHandler(spec.Name)
+
 	server.AddTool(&mcp.Tool{
 		Name:        spec.Name,
 		Description: spec.Description,
 		InputSchema: inputSchema,
-	}, r.getHandler(spec.Name))
+		Annotations: &mcp.ToolAnnotations{
+			Title:        spec.Title,
+			ReadOnlyHint: spec.ReadOnly,
+		},
+	}, r.wrapHandler(spec.Name, handler))
 }
 
 func (r *Registry) getHandler(name string) mcp.ToolHandler {
@@ -502,4 +509,20 @@ func errorResult(message string) (*mcp.CallToolResult, error) {
 		},
 		IsError: true,
 	}, nil
+}
+
+// wrapHandler adds panic recovery around a tool handler.
+func (r *Registry) wrapHandler(toolName string, handler mcp.ToolHandler) mcp.ToolHandler {
+	return func(ctx context.Context, req *mcp.CallToolRequest) (result *mcp.CallToolResult, err error) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				r.logger.Error("Panic recovered in tool handler",
+					"tool", toolName,
+					"panic", rec,
+					"stack", string(debug.Stack()))
+				result, err = errorResult(fmt.Sprintf("Internal error in %s", toolName))
+			}
+		}()
+		return handler(ctx, req)
+	}
 }
