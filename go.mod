@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/modelcontextprotocol/go-sdk v1.2.0
+	github.com/modelcontextprotocol/go-sdk v1.3.0
 	golang.org/x/time v0.14.0
 )
 
