@@ -142,7 +142,7 @@ FAILS WHEN: LEI format invalid (must be 20 alphanumeric chars), no relationships
 		Title:       "Autocomplete Entity Name",
 		Category:    "utility",
 		ReadOnly:    true,
-		Description: `Get entity name suggestions from a prefix (min 2 characters). For full search results with pagination, use search_entity instead. FAILS WHEN: prefix is shorter than 2 characters. Falls back to fuzzy search automatically if the autocomplete endpoint is unavailable.`,
+		Description: `Get entity name suggestions from a prefix (min 2 characters). USE WHEN: "suggest companies starting with X", "autocomplete company name", user is typing a name and needs quick suggestions. For full search results with pagination, use search_entity instead. FAILS WHEN: prefix is shorter than 2 characters. Falls back to fuzzy search automatically if the autocomplete endpoint is unavailable.`,
 		Parameters: []ParameterSpec{
 			{Name: "prefix", Type: "string", Description: "Name prefix to complete", Required: true},
 			{Name: "limit", Type: "integer", Description: "Max suggestions (default 10)", Required: false},
