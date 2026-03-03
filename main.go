@@ -43,6 +43,10 @@ func main() {
 	}, &mcp.ServerOptions{
 		Logger:       logger,
 		Instructions: serverInstructions,
+		// Suppress pre-initialize notifications/tools/list_changed from go-sdk.
+		// Without this, AddTool triggers a notification before the client completes
+		// the initialize handshake, causing intermittent connection failures.
+		Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{}},
 	})
 
 	// Register tools
