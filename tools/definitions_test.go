@@ -60,6 +60,16 @@ func TestAllToolsReadOnly(t *testing.T) {
 	}
 }
 
+func TestAllToolsIdempotent(t *testing.T) {
+	for _, tool := range AllTools {
+		t.Run(tool.Name, func(t *testing.T) {
+			if !tool.Idempotent {
+				t.Errorf("tool %q should be Idempotent (GLEIF is a read-only API)", tool.Name)
+			}
+		})
+	}
+}
+
 func TestToolCount(t *testing.T) {
 	expectedCount := 12
 	if len(AllTools) != expectedCount {

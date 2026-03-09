@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -50,6 +51,27 @@ func (r *Registry) registerTool(server *mcp.Server, spec ToolSpec) {
 		if len(param.Enum) > 0 {
 			prop["enum"] = param.Enum
 		}
+		if param.MinLength != nil {
+			prop["minLength"] = *param.MinLength
+		}
+		if param.MaxLength != nil {
+			prop["maxLength"] = *param.MaxLength
+		}
+		if param.Minimum != nil {
+			prop["minimum"] = *param.Minimum
+		}
+		if param.Maximum != nil {
+			prop["maximum"] = *param.Maximum
+		}
+		if param.Default != nil {
+			prop["default"] = param.Default
+		}
+		if param.Example != nil {
+			prop["examples"] = []any{param.Example}
+		}
+		if param.Pattern != "" {
+			prop["pattern"] = param.Pattern
+		}
 		properties[param.Name] = prop
 		if param.Required {
 			required = append(required, param.Name)
@@ -71,8 +93,9 @@ func (r *Registry) registerTool(server *mcp.Server, spec ToolSpec) {
 		Description: spec.Description,
 		InputSchema: inputSchema,
 		Annotations: &mcp.ToolAnnotations{
-			Title:        spec.Title,
-			ReadOnlyHint: spec.ReadOnly,
+			Title:          spec.Title,
+			ReadOnlyHint:   spec.ReadOnly,
+			IdempotentHint: spec.Idempotent,
 		},
 	}, r.wrapHandler(spec.Name, handler))
 }
@@ -125,7 +148,7 @@ func (r *Registry) handleLEILookup(ctx context.Context, req *mcp.CallToolRequest
 
 	record, err := r.client.GetLEI(ctx, lei)
 	if err != nil {
-		return errorResult(fmt.Sprintf("Failed to fetch LEI: %v", err))
+		return classifyError("Failed to fetch LEI", err)
 	}
 
 	return jsonResult(record)
@@ -144,7 +167,7 @@ func (r *Registry) handleValidateLEI(ctx context.Context, req *mcp.CallToolReque
 
 	result, err := r.client.ValidateLEI(ctx, lei)
 	if err != nil {
-		return errorResult(fmt.Sprintf("Validation error: %v", err))
+		return classifyError("Validation error", err)
 	}
 
 	return jsonResult(result)
@@ -169,11 +192,12 @@ func (r *Registry) handleBatchLEILookup(ctx context.Context, req *mcp.CallToolRe
 
 	records, err := r.client.GetBatchLEI(ctx, leis)
 	if err != nil {
-		return errorResult(fmt.Sprintf("Batch lookup failed: %v", err))
+		return classifyError("Batch lookup failed", err)
 	}
 
 	// Return simplified results
 	results := make([]map[string]any, len(records))
+	foundLEIs := make(map[string]bool, len(records))
 	for i, rec := range records {
 		results[i] = map[string]any{
 			"lei":       rec.LEI,
@@ -183,13 +207,27 @@ func (r *Registry) handleBatchLEILookup(ctx context.Context, req *mcp.CallToolRe
 			"status":    rec.Entity.Status,
 			"regStatus": rec.Registration.Status,
 		}
+		foundLEIs[rec.LEI] = true
 	}
 
-	return jsonResult(map[string]any{
+	// Compute set difference: requested LEIs not in results
+	var notFound []string
+	for _, lei := range leis {
+		if !foundLEIs[lei] {
+			notFound = append(notFound, lei)
+		}
+	}
+
+	response := map[string]any{
 		"requested": len(leis),
 		"found":     len(results),
 		"results":   results,
-	})
+	}
+	if len(notFound) > 0 {
+		response["notFound"] = notFound
+	}
+
+	return jsonResult(response)
 }
 
 func (r *Registry) handleSearchEntity(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -230,7 +268,7 @@ func (r *Registry) handleSearchEntity(ctx context.Context, req *mcp.CallToolRequ
 	}
 
 	if searchErr != nil {
-		return errorResult(fmt.Sprintf("Search failed: %v", searchErr))
+		return classifyError("Search failed", searchErr)
 	}
 
 	// Return simplified results
@@ -278,12 +316,14 @@ func (r *Registry) handleSearchByBIC(ctx context.Context, req *mcp.CallToolReque
 
 	records, err := r.client.SearchByBIC(ctx, bic)
 	if err != nil {
-		return errorResult(fmt.Sprintf("BIC search failed: %v", err))
+		return classifyError("BIC search failed", err)
 	}
 
 	if len(records) == 0 {
 		return jsonResult(map[string]any{
 			"found":   false,
+			"count":   0,
+			"records": []any{},
 			"message": "No LEI found for this BIC code",
 		})
 	}
@@ -308,12 +348,14 @@ func (r *Registry) handleSearchByISIN(ctx context.Context, req *mcp.CallToolRequ
 
 	records, err := r.client.SearchByISIN(ctx, isin)
 	if err != nil {
-		return errorResult(fmt.Sprintf("ISIN search failed: %v", err))
+		return classifyError("ISIN search failed", err)
 	}
 
 	if len(records) == 0 {
 		return jsonResult(map[string]any{
 			"found":   false,
+			"count":   0,
+			"records": []any{},
 			"message": "No issuer LEI found for this ISIN",
 		})
 	}
@@ -343,7 +385,7 @@ func (r *Registry) handleSearchByCountry(ctx context.Context, req *mcp.CallToolR
 
 	records, err := r.client.SearchByCountry(ctx, country, limit)
 	if err != nil {
-		return errorResult(fmt.Sprintf("Country search failed: %v", err))
+		return classifyError("Country search failed", err)
 	}
 
 	// Return simplified results
@@ -382,7 +424,7 @@ func (r *Registry) handleGetRelationships(ctx context.Context, req *mcp.CallTool
 
 	relationships, err := r.client.GetRelationships(ctx, lei, relType)
 	if err != nil {
-		return errorResult(fmt.Sprintf("Relationship lookup failed: %v", err))
+		return classifyError("Relationship lookup failed", err)
 	}
 
 	return jsonResult(map[string]any{
@@ -410,7 +452,7 @@ func (r *Registry) handleAutocomplete(ctx context.Context, req *mcp.CallToolRequ
 
 	suggestions, err := r.client.Autocomplete(ctx, prefix, limit)
 	if err != nil {
-		return errorResult(fmt.Sprintf("Autocomplete failed: %v", err))
+		return classifyError("Autocomplete failed", err)
 	}
 
 	return jsonResult(map[string]any{
@@ -432,7 +474,7 @@ func (r *Registry) handleGetLEIIssuer(ctx context.Context, req *mcp.CallToolRequ
 
 	issuer, err := r.client.GetLEIIssuer(ctx, issuerID)
 	if err != nil {
-		return errorResult(fmt.Sprintf("Failed to fetch LEI issuer: %v", err))
+		return classifyError("Failed to fetch LEI issuer", err)
 	}
 
 	return jsonResult(issuer)
@@ -441,7 +483,7 @@ func (r *Registry) handleGetLEIIssuer(ctx context.Context, req *mcp.CallToolRequ
 func (r *Registry) handleListLEIIssuers(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	issuers, err := r.client.ListLEIIssuers(ctx)
 	if err != nil {
-		return errorResult(fmt.Sprintf("Failed to list LEI issuers: %v", err))
+		return classifyError("Failed to list LEI issuers", err)
 	}
 
 	return jsonResult(map[string]any{
@@ -463,7 +505,7 @@ func (r *Registry) handleGetReportingExceptions(ctx context.Context, req *mcp.Ca
 
 	exceptions, err := r.client.GetReportingExceptions(ctx, lei)
 	if err != nil {
-		return errorResult(fmt.Sprintf("Failed to fetch reporting exceptions: %v", err))
+		return classifyError("Failed to fetch reporting exceptions", err)
 	}
 
 	return jsonResult(map[string]any{
@@ -501,14 +543,34 @@ func jsonResult(data any) (*mcp.CallToolResult, error) {
 }
 
 func errorResult(message string) (*mcp.CallToolResult, error) {
+	return errorResultWithCode("error", message, false)
+}
+
+func errorResultWithCode(code, message string, retryable bool) (*mcp.CallToolResult, error) {
+	errJSON, _ := json.MarshalIndent(map[string]any{
+		"error":     true,
+		"code":      code,
+		"message":   message,
+		"retryable": retryable,
+	}, "", "  ")
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: message,
+				Text: string(errJSON),
 			},
 		},
 		IsError: true,
 	}, nil
+}
+
+// classifyError inspects an error and returns a structured error result with
+// the appropriate code and retryable flag from the underlying APIError, if any.
+func classifyError(prefix string, err error) (*mcp.CallToolResult, error) {
+	var apiErr *gleif.APIError
+	if errors.As(err, &apiErr) {
+		return errorResultWithCode(apiErr.Code, fmt.Sprintf("%s: %s", prefix, apiErr.Message), apiErr.Retryable)
+	}
+	return errorResultWithCode("error", fmt.Sprintf("%s: %v", prefix, err), false)
 }
 
 // wrapHandler adds panic recovery around a tool handler.

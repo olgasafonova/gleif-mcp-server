@@ -155,7 +155,7 @@ func TestHandleLEILookup(t *testing.T) {
 			t.Error("Expected error result for missing lei parameter")
 		}
 		if !strings.Contains(getResultText(result), "lei parameter is required") {
-			t.Errorf("Expected error message about lei parameter, got: %s", getResultText(result))
+			t.Errorf("Expected error message containing 'lei parameter is required', got: %s", getResultText(result))
 		}
 	})
 
@@ -887,8 +887,9 @@ func TestUnknownToolHandler(t *testing.T) {
 	if !result.IsError {
 		t.Error("Expected error result for unknown tool")
 	}
-	if !strings.Contains(getResultText(result), "Unknown tool") {
-		t.Errorf("Expected 'Unknown tool' in error message, got: %s", getResultText(result))
+	text := getResultText(result)
+	if !strings.Contains(text, "Unknown tool") {
+		t.Errorf("Expected 'Unknown tool' in error message, got: %s", text)
 	}
 }
 
@@ -932,8 +933,20 @@ func TestErrorResult(t *testing.T) {
 	if !result.IsError {
 		t.Error("Expected IsError=true")
 	}
-	if getResultText(result) != "test error message" {
-		t.Errorf("Expected message 'test error message', got: %s", getResultText(result))
+	text := getResultText(result)
+	// Error results are now structured JSON
+	var errResp map[string]any
+	if jsonErr := json.Unmarshal([]byte(text), &errResp); jsonErr != nil {
+		t.Fatalf("errorResult did not return valid JSON: %v", jsonErr)
+	}
+	if errResp["error"] != true {
+		t.Error("Expected error=true in JSON response")
+	}
+	if errResp["message"] != "test error message" {
+		t.Errorf("Expected message 'test error message', got: %v", errResp["message"])
+	}
+	if errResp["retryable"] != false {
+		t.Error("Expected retryable=false in JSON response")
 	}
 }
 
