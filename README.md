@@ -52,6 +52,10 @@ Example: `HWUPKR0MPOU8FGXBT394` (Apple Inc.)
 - **Handles Errors Gracefully**: Automatic retries on timeouts or temporary failures
 - **Stays Within Limits**: Built-in rate limiting prevents hitting GLEIF's quotas
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/olgasafonova-gleif-mcp-server).
+
 ## Installation
 
 ### Download Binary
