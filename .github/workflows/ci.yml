@@ -20,6 +20,20 @@ jobs:
       - name: Verify dependencies
         run: go mod verify
 
+      - name: Check go.sum integrity
+        run: |
+          go mod tidy
+          if ! git diff --quiet go.sum; then
+            echo "::error::go.sum is not up to date. Run 'go mod tidy' and commit the changes."
+            git diff go.sum
+            exit 1
+          fi
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
       - name: Run go vet
         run: go vet ./...
 
