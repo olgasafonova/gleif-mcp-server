@@ -103,7 +103,7 @@ FAILS WHEN: no results found (try autocomplete for name suggestions, or check sp
 		Category:    "search",
 		ReadOnly:    true,
 		Idempotent:  true,
-		Description: `Find a bank's LEI from its BIC/SWIFT code (8 or 11 characters). USE WHEN: "find LEI from BIC", "BIC to LEI", "SWIFT code lookup", user provides a BIC code. FAILS WHEN: BIC is not 8 or 11 characters (fix input), no entity mapped to this BIC (not all banks have LEIs; try search_entity with the bank name instead).`,
+		Description: `Find a bank's LEI from its BIC/SWIFT code (8 or 11 characters). USE WHEN: "find LEI from BIC", "BIC to LEI", "SWIFT code lookup", user provides a BIC code. Returns matching entity with LEI, legal name, country, and registration status. FAILS WHEN: BIC is not 8 or 11 characters (fix input), no entity mapped to this BIC (not all banks have LEIs; try search_entity with the bank name instead).`,
 		Parameters: []ParameterSpec{
 			{Name: "bic", Type: "string", Description: "BIC/SWIFT code (8 or 11 chars)", Required: true, Pattern: `^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$`, Example: "DEUTDEFF"},
 		},
@@ -115,7 +115,7 @@ FAILS WHEN: no results found (try autocomplete for name suggestions, or check sp
 		Category:    "search",
 		ReadOnly:    true,
 		Idempotent:  true,
-		Description: `Find the issuer's LEI from a securities ISIN code (12 characters). USE WHEN: "who issued ISIN US0378331005?", "ISIN to LEI", user provides an ISIN. FAILS WHEN: ISIN is not 12 characters (fix input), no issuer found for this ISIN (some securities lack LEI mapping).`,
+		Description: `Find the issuer's LEI from a securities ISIN code (12 characters). USE WHEN: "who issued ISIN US0378331005?", "ISIN to LEI", user provides an ISIN. Returns issuer entity with LEI, legal name, country, and registration status. FAILS WHEN: ISIN is not 12 characters (fix input), no issuer found for this ISIN (some securities lack LEI mapping).`,
 		Parameters: []ParameterSpec{
 			{Name: "isin", Type: "string", Description: "12-character ISIN code", Required: true, Pattern: `^[A-Z]{2}[A-Z0-9]{10}$`, MinLength: intPtr(12), MaxLength: intPtr(12), Example: "US0378331005"},
 		},
@@ -127,7 +127,7 @@ FAILS WHEN: no results found (try autocomplete for name suggestions, or check sp
 		Category:    "search",
 		ReadOnly:    true,
 		Idempotent:  true,
-		Description: `List entities registered in a specific country. USE WHEN: "companies in Germany", "LEIs from US", "entities in country X". Pass ISO 2-letter code (US, GB, DE). FAILS WHEN: country code is not a 2-letter ISO 3166-1 alpha-2 code (use "US" not "USA", "GB" not "UK").`,
+		Description: `List entities registered in a specific country. USE WHEN: "companies in Germany", "LEIs from US", "entities in country X". Pass ISO 2-letter code (US, GB, DE). Returns entity list with LEI, legal name, and status for each. Paginated. FAILS WHEN: country code is not a 2-letter ISO 3166-1 alpha-2 code (use "US" not "USA", "GB" not "UK").`,
 		Parameters: []ParameterSpec{
 			{Name: "country", Type: "string", Description: "2-letter ISO country code", Required: true, Pattern: `^[A-Z]{2}$`, MinLength: intPtr(2), MaxLength: intPtr(2), Example: "US"},
 			{Name: "limit", Type: "integer", Description: "Max results (default 20)", Required: false, Minimum: floatPtr(1), Maximum: floatPtr(100), Default: 20},
@@ -147,7 +147,7 @@ FAILS WHEN: no results found (try autocomplete for name suggestions, or check sp
 
 USE WHEN: "who owns X?", "parent company", "subsidiaries", "fund manager"
 
-Types: direct-parent, ultimate-parent, children, fund-manager, umbrella-fund, sub-funds.
+Types: direct-parent, ultimate-parent, children, fund-manager, umbrella-fund, sub-funds. Returns relationship records with related entity LEI, legal name, relationship type, and status.
 
 FAILS WHEN: LEI format invalid (must be 20 alphanumeric chars), no relationships of requested type exist (entity may have no parent; check get_reporting_exceptions for why ownership data is missing).`,
 		Parameters: []ParameterSpec{
@@ -165,7 +165,7 @@ FAILS WHEN: LEI format invalid (must be 20 alphanumeric chars), no relationships
 		Category:    "utility",
 		ReadOnly:    true,
 		Idempotent:  true,
-		Description: `Get entity name suggestions from a prefix (min 2 characters). USE WHEN: "suggest companies starting with X", "autocomplete company name", user is typing a name and needs quick suggestions. For full search results with pagination, use search_entity instead. FAILS WHEN: prefix is shorter than 2 characters. Falls back to fuzzy search automatically if the autocomplete endpoint is unavailable.`,
+		Description: `Get entity name suggestions from a prefix (min 2 characters). USE WHEN: "suggest companies starting with X", "autocomplete company name", user is typing a name and needs quick suggestions. For full search results with pagination, use search_entity instead. Returns name suggestions with LEI and legal name for each match. FAILS WHEN: prefix is shorter than 2 characters. Falls back to fuzzy search automatically if the autocomplete endpoint is unavailable.`,
 		Parameters: []ParameterSpec{
 			{Name: "prefix", Type: "string", Description: "Name prefix to complete", Required: true, MinLength: intPtr(2), Example: "Apple"},
 			{Name: "limit", Type: "integer", Description: "Max suggestions (default 10)", Required: false, Minimum: floatPtr(1), Maximum: floatPtr(50), Default: 10},
@@ -181,7 +181,7 @@ FAILS WHEN: LEI format invalid (must be 20 alphanumeric chars), no relationships
 		Category:    "issuers",
 		ReadOnly:    true,
 		Idempotent:  true,
-		Description: `Get details about a specific LEI issuer (Local Operating Unit / LOU) by ID. USE WHEN: "details on this LOU", "issuer info". Returns name, country, status, and sponsored LEI count. For all issuers worldwide, use list_lei_issuers. FAILS WHEN: issuer ID not found (use list_lei_issuers to get valid IDs).`,
+		Description: `Get details about a specific LEI issuer (Local Operating Unit / LOU) by ID. USE WHEN: "details on this LOU", "issuer info". Returns issuer name, country, status, website, and count of sponsored LEIs. For all issuers worldwide, use list_lei_issuers. FAILS WHEN: issuer ID not found (use list_lei_issuers to get valid IDs).`,
 		Parameters: []ParameterSpec{
 			{Name: "issuer_id", Type: "string", Description: "LEI issuer ID", Required: true, Example: "EVK05KS7XY1DEII3R011"},
 		},
@@ -193,7 +193,7 @@ FAILS WHEN: LEI format invalid (must be 20 alphanumeric chars), no relationships
 		Category:    "issuers",
 		ReadOnly:    true,
 		Idempotent:  true,
-		Description: `List all LEI issuers (Local Operating Units / LOUs) worldwide. USE WHEN: "show all LOUs", "which organizations issue LEIs?", "LEI issuer directory". Returns name, country, status for each. For one specific issuer, use get_lei_issuer.`,
+		Description: `List all LEI issuers (Local Operating Units / LOUs) worldwide. USE WHEN: "show all LOUs", "which organizations issue LEIs?", "LEI issuer directory". Returns all issuers with name, country, status, and sponsored LEI count. For one specific issuer, use get_lei_issuer.`,
 		Parameters:  []ParameterSpec{},
 	},
 
@@ -206,7 +206,7 @@ FAILS WHEN: LEI format invalid (must be 20 alphanumeric chars), no relationships
 		Category:    "compliance",
 		ReadOnly:    true,
 		Idempotent:  true,
-		Description: `Explains why parent/ownership data may be missing for an entity. USE WHEN: "why no parent info?", "reporting exceptions", "missing ownership data". Returns Level 2 exception types: NON_CONSOLIDATING, NO_KNOWN_PERSON, NATURAL_PERSONS, NON_PUBLIC. FAILS WHEN: LEI format invalid (must be 20 alphanumeric chars). Returns empty list when entity has no exceptions (meaning parent data is complete).`,
+		Description: `Explains why parent/ownership data may be missing for an entity. USE WHEN: "why no parent info?", "reporting exceptions", "missing ownership data". Returns list of Level 2 exceptions, each with type (NON_CONSOLIDATING, NO_KNOWN_PERSON, NATURAL_PERSONS, NON_PUBLIC), category, and reference entity. Empty list when entity has no exceptions (parent data is complete). FAILS WHEN: LEI format invalid (must be 20 alphanumeric chars).`,
 		Parameters: []ParameterSpec{
 			{Name: "lei", Type: "string", Description: "LEI code", Required: true, Pattern: `^[A-Z0-9]{20}$`, MinLength: intPtr(20), MaxLength: intPtr(20)},
 		},

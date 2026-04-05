@@ -687,7 +687,7 @@ func validateLEICheckDigits(lei string) bool {
 	var numStr strings.Builder
 	for _, ch := range lei {
 		if ch >= 'A' && ch <= 'Z' {
-			numStr.WriteString(fmt.Sprintf("%d", ch-'A'+10))
+			fmt.Fprintf(&numStr, "%d", ch-'A'+10)
 		} else if ch >= '0' && ch <= '9' {
 			numStr.WriteByte(byte(ch))
 		} else {
