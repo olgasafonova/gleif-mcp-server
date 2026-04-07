@@ -11,6 +11,10 @@ updates:
     labels:
       - "dependencies"
       - "go"
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
