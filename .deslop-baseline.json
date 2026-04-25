@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-04-25T09:26:49Z",
+  "deslop_version": "2.1.0",
+  "scores": {
+    "file_health": 70.0,
+    "test_coverage": 50.0,
+    "secret_detection": 100.0,
+    "todo_debt": 100.0,
+    "dependency_health": 100.0,
+    "structural_quality": 100.0,
+    "overall": 86.7
+  },
+  "findings": [
+    {
+      "detector": "file_health",
+      "severity": "high",
+      "key": "tools/handlers_test.go",
+      "summary": "tools/handlers_test.go (1,016 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "internal/gleif/client.go",
+      "summary": "internal/gleif/client.go (706 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "internal/gleif/client_test.go",
+      "summary": "internal/gleif/client_test.go (646 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "tools/handlers.go",
+      "summary": "tools/handlers.go (590 LOC)"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "internal/gleif/cache.go",
+      "summary": "internal/gleif/cache.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "internal/gleif/errors.go",
+      "summary": "internal/gleif/errors.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "internal/gleif/types.go",
+      "summary": "internal/gleif/types.go has no test file"
+    }
+  ]
+}
