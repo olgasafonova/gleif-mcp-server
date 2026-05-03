@@ -109,7 +109,6 @@ jobs:
               {
                 "registryType": "oci",
                 "identifier": "ghcr.io/olgasafonova/gleif-mcp-server:$VERSION",
-                "version": "$VERSION",
                 "transport": {"type": "stdio"}
               },
               {
