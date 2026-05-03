@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sync/singleflight"
 	"golang.org/x/time/rate"
 )
 
@@ -102,6 +103,15 @@ type Client struct {
 	limiter    *rate.Limiter
 	cache      *Cache
 	config     Config
+	// sfGroup collapses N concurrent calls for the same uncached key into
+	// a single upstream fetch. Without it, a burst of identical requests
+	// during a cold-cache window each consume a slot in the shared rate
+	// limiter (50 rpm, burst 10), trivially draining it. Combined with
+	// the validation cache logic, that drain is what made the (now-fixed)
+	// 24-hour cache-poisoning trigger reachable from a single client.
+	// Used today for GetLEI; other cacheable methods may adopt the same
+	// pattern in follow-up changes.
+	sfGroup singleflight.Group
 }
 
 // NewClient creates a new GLEIF client.
@@ -152,27 +162,44 @@ func (c *Client) GetLEI(ctx context.Context, lei string) (*LEIRecord, error) {
 		return nil, NewInvalidFormatError("LEI", "must be 20 alphanumeric characters")
 	}
 
-	// Check cache first
+	// Cache hit fast-path (no singleflight overhead on the warm path).
 	if record, ok := c.cache.GetLEI(lei); ok {
 		c.logger.Debug("Cache hit for LEI", "lei", lei)
 		return record, nil
 	}
 
-	reqURL := fmt.Sprintf("%s/lei-records/%s", c.baseURL, lei)
-	c.logger.Debug("Fetching LEI", "lei", lei, "url", reqURL)
+	// Cold path: collapse N concurrent callers for the same LEI into a
+	// single upstream fetch. The leader does the GLEIF round-trip and
+	// populates the cache; followers receive the leader's result without
+	// consuming a rate-limit slot of their own.
+	v, err, _ := c.sfGroup.Do("lei:"+lei, func() (any, error) {
+		// Re-check cache inside the singleflight: a previous leader for
+		// this same key may have populated it between our outer miss and
+		// our turn here. (Cache hit paths return a cloned record per the
+		// cache_isolation fix; that contract holds here too.)
+		if record, ok := c.cache.GetLEI(lei); ok {
+			return record, nil
+		}
 
-	var resp SingleResponse[LEIRecord]
-	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
+		reqURL := fmt.Sprintf("%s/lei-records/%s", c.baseURL, lei)
+		c.logger.Debug("Fetching LEI", "lei", lei, "url", reqURL)
+
+		var resp SingleResponse[LEIRecord]
+		if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
+			return nil, err
+		}
+
+		record := resp.Data.Attributes
+		record.LEI = resp.Data.ID
+
+		c.cache.SetLEI(lei, &record)
+		return &record, nil
+	})
+
+	if err != nil {
 		return nil, err
 	}
-
-	record := resp.Data.Attributes
-	record.LEI = resp.Data.ID
-
-	// Cache the result
-	c.cache.SetLEI(lei, &record)
-
-	return &record, nil
+	return v.(*LEIRecord), nil
 }
 
 // GetBatchLEI retrieves multiple LEI records in one request.

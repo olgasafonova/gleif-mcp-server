@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - API client refuses all redirects via `CheckRedirect` returning `http.ErrUseLastResponse`. The GLEIF API does not redirect under normal operation; without this guard, a misconfigured `BaseURL` or a wiki/proxy returning `Location: http://169.254.169.254/...` would pivot a lookup into a fetch against cloud metadata or other link-local internal services, with the body landing in the agent context. (security)
 - LEI record cache no longer returns aliased pointers. Previously `SetLEI` stored the caller's pointer as-is and `GetLEI` handed the same pointer to every cache-hit caller; any future handler mutating a returned field (redaction, normalization, locale fix-ups) would silently corrupt cached state for every other concurrent caller. Cache now deep-copies on both store and retrieval. (correctness)
+- `GetLEI` cold-path fetches now collapse via `singleflight.Group`. Previously, N concurrent callers asking for the same uncached LEI each consumed a slot in the shared rate limiter (50 rpm, burst 10), trivially draining it; now one leader does the upstream round-trip and followers receive the leader's result. Closes the rate-limit-amplification surface that made the (now-fixed) 24-hour validation cache poison reachable from a single client. (security)
 
 ## [0.8.0] - 2026-05-03
 
