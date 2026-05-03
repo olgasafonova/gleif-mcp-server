@@ -649,12 +649,18 @@ func (c *Client) doRequest(ctx context.Context, url string, result any) error {
 	case http.StatusTooManyRequests:
 		return NewRateLimitError(60)
 	default:
+		// Don't leak raw response bodies into the MCP caller's error string.
+		// HTML/CDN error pages, MITM proxy responses, and prompt-injection
+		// payloads in echoed input are all blocked at this gate. Operators
+		// can still recover the body via debug-level request logging; only
+		// the MCP caller's error string is sanitized. See HG-2 in
+		// rules/code-review-prompts.md.
 		if resp.StatusCode >= 500 {
-			return NewServerError(resp.StatusCode, string(body))
+			return NewServerError(resp.StatusCode, "")
 		}
 		return &APIError{
 			Code:       ErrCodeServerError,
-			Message:    fmt.Sprintf("API error: %s", string(body)),
+			Message:    http.StatusText(resp.StatusCode),
 			StatusCode: resp.StatusCode,
 			Retryable:  false,
 		}
