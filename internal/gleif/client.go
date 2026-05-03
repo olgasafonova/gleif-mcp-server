@@ -3,6 +3,7 @@ package gleif
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -461,12 +462,25 @@ func (c *Client) ValidateLEI(ctx context.Context, lei string) (*ValidationResult
 		return result, nil
 	}
 
-	// Try to fetch the record
+	// Try to fetch the record. Only cache a negative result when GLEIF
+	// returned a definitive 404 — caching transient errors (5xx, timeout,
+	// rate-limit retry exhaustion) as "not found" would poison the cache
+	// for the configured ValidationTTL (24 hours by default), allowing an
+	// attacker who can briefly disrupt the upstream path (rate-limiter
+	// drain, network blip, GLEIF incident) to mark any LEI as invalid for
+	// the rest of the day.
 	record, err := c.GetLEI(ctx, lei)
 	if err != nil {
 		result.Valid = false
-		result.Message = "LEI not found in GLEIF database"
-		c.cache.SetValidation(lei, result)
+		var apiErr *APIError
+		isDefinitiveNotFound := errors.As(err, &apiErr) && apiErr.Code == ErrCodeNotFound
+		if isDefinitiveNotFound {
+			result.Message = "LEI not found in GLEIF database"
+			c.cache.SetValidation(lei, result)
+		} else {
+			// Transient — propagate the error context, do NOT cache.
+			result.Message = fmt.Sprintf("Validation unavailable: %s", err.Error())
+		}
 		return result, nil
 	}
 
