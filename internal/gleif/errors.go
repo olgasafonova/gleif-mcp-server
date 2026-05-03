@@ -93,12 +93,18 @@ func NewTimeoutError() *APIError {
 	}
 }
 
-// NewServerError creates a server error.
-func NewServerError(statusCode int, body string) *APIError {
+// NewServerError creates a server error. The body argument is deliberately
+// ignored at this layer — we never propagate raw response bodies into the
+// MCP caller's error structure (HG-2). Operators who need to inspect body
+// content during incidents should add request-level debug logging in the
+// HTTP client; the MCP error path is sanitized at the boundary.
+//
+// The body parameter remains in the signature for backward compatibility
+// with callers that may still pass it, but it is dropped on the floor.
+func NewServerError(statusCode int, _ string) *APIError {
 	return &APIError{
 		Code:       ErrCodeServerError,
 		Message:    "GLEIF API returned an error",
-		Details:    body,
 		StatusCode: statusCode,
 		Retryable:  statusCode >= 500,
 	}
