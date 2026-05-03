@@ -25,12 +25,49 @@ const (
 	// LEI format: 20 alphanumeric characters.
 	LEIPattern = `^[A-Z0-9]{4}[A-Z0-9]{2}[A-Z0-9]{12}[0-9]{2}$`
 
+	// ISIN format: 2-letter country code + 9 alphanumeric + 1 check digit (12 total).
+	// Matches the Pattern declared in tools/definitions.go for search_by_isin.
+	ISINPattern = `^[A-Z]{2}[A-Z0-9]{10}$`
+
+	// BIC format: 8 or 11 characters (matches search_by_bic tool spec Pattern).
+	BICPattern = `^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$`
+
+	// CountryPattern: ISO 3166-1 alpha-2.
+	CountryPattern = `^[A-Z]{2}$`
+
+	// IssuerIDPattern: LEI issuer (LOU) ID. GLEIF issues these as 20-character
+	// alphanumeric (often the LEI of the issuing organization), but historic
+	// IDs can be shorter alphanumeric tokens. Allow 4-32 alphanumeric chars to
+	// cover both shapes without admitting URL-pivot characters.
+	IssuerIDPattern = `^[A-Z0-9]{4,32}$`
+
 	// Rate limit: GLEIF allows 60/min, we use 50 to be safe.
 	DefaultRateLimit = 50.0 / 60.0 // ~0.83 requests per second
 	DefaultBurstSize = 10
 )
 
-var leiRegex = regexp.MustCompile(LEIPattern)
+var (
+	leiRegex      = regexp.MustCompile(LEIPattern)
+	isinRegex     = regexp.MustCompile(ISINPattern)
+	bicRegex      = regexp.MustCompile(BICPattern)
+	countryRegex  = regexp.MustCompile(CountryPattern)
+	issuerIDRegex = regexp.MustCompile(IssuerIDPattern)
+)
+
+// ValidateIssuerID checks that an LEI issuer (LOU) ID is well-formed and
+// safe for URL-path interpolation. Without this check, an adversarial MCP
+// caller could send issuer_id="../lei-records/SOMELEI" and pivot the
+// request away from /lei-issuers/ to a different GLEIF endpoint.
+func ValidateIssuerID(id string) error {
+	id = strings.ToUpper(strings.TrimSpace(id))
+	if id == "" {
+		return NewInvalidFormatError("issuer_id", "is required")
+	}
+	if !issuerIDRegex.MatchString(id) {
+		return NewInvalidFormatError("issuer_id", "must be 4-32 alphanumeric characters")
+	}
+	return nil
+}
 
 // Config holds client configuration.
 type Config struct {
@@ -260,8 +297,8 @@ func (c *Client) FuzzySearch(ctx context.Context, query string, limit, page int)
 // SearchByBIC finds LEI records by BIC/SWIFT code.
 func (c *Client) SearchByBIC(ctx context.Context, bic string) ([]LEIRecord, error) {
 	bic = strings.ToUpper(strings.TrimSpace(bic))
-	if len(bic) != 8 && len(bic) != 11 {
-		return nil, NewInvalidFormatError("BIC", "must be 8 or 11 characters")
+	if !bicRegex.MatchString(bic) {
+		return nil, NewInvalidFormatError("BIC", "must be 8 or 11 characters: 4 letters + 2 letters + 2 alphanumeric, optional 3 alphanumeric")
 	}
 
 	// Check cache
@@ -294,8 +331,8 @@ func (c *Client) SearchByBIC(ctx context.Context, bic string) ([]LEIRecord, erro
 // SearchByISIN finds LEI records associated with an ISIN.
 func (c *Client) SearchByISIN(ctx context.Context, isin string) ([]LEIRecord, error) {
 	isin = strings.ToUpper(strings.TrimSpace(isin))
-	if len(isin) != 12 {
-		return nil, NewInvalidFormatError("ISIN", "must be 12 characters")
+	if !isinRegex.MatchString(isin) {
+		return nil, NewInvalidFormatError("ISIN", "must be 2 letters followed by 10 alphanumeric characters (12 total)")
 	}
 
 	// Check cache
@@ -304,8 +341,12 @@ func (c *Client) SearchByISIN(ctx context.Context, isin string) ([]LEIRecord, er
 		return records, nil
 	}
 
-	// GLEIF uses the ISIN-LEI mapping endpoint
-	reqURL := fmt.Sprintf("%s/lei-issuer?filter[isin]=%s", c.baseURL, isin)
+	// GLEIF uses the ISIN-LEI mapping endpoint. Build the URL via url.Values
+	// rather than raw fmt.Sprintf — an unvalidated value containing `&` could
+	// otherwise smuggle an additional query parameter past the intended one.
+	primaryParams := url.Values{}
+	primaryParams.Set("filter[isin]", isin)
+	reqURL := fmt.Sprintf("%s/lei-issuer?%s", c.baseURL, primaryParams.Encode())
 	c.logger.Debug("Searching by ISIN", "isin", isin, "url", reqURL)
 
 	var resp APIResponse[LEIRecord]
@@ -492,8 +533,8 @@ func (c *Client) SearchByCountry(ctx context.Context, country string, limit int)
 	}
 
 	country = strings.ToUpper(strings.TrimSpace(country))
-	if len(country) != 2 {
-		return nil, NewInvalidFormatError("country", "must be a 2-letter ISO code")
+	if !countryRegex.MatchString(country) {
+		return nil, NewInvalidFormatError("country", "must be a 2-letter ISO 3166-1 alpha-2 code")
 	}
 
 	// Check cache
@@ -526,7 +567,14 @@ func (c *Client) SearchByCountry(ctx context.Context, country string, limit int)
 
 // GetLEIIssuer retrieves information about an LEI issuer (LOU).
 func (c *Client) GetLEIIssuer(ctx context.Context, issuerID string) (*LEIIssuer, error) {
-	reqURL := fmt.Sprintf("%s/lei-issuers/%s", c.baseURL, issuerID)
+	if err := ValidateIssuerID(issuerID); err != nil {
+		return nil, err
+	}
+	issuerID = strings.ToUpper(strings.TrimSpace(issuerID))
+	// url.PathEscape is a no-op for validator-approved IDs (the regex already
+	// restricts to URL-safe chars), but stays as belt-and-braces against
+	// future regex loosening.
+	reqURL := fmt.Sprintf("%s/lei-issuers/%s", c.baseURL, url.PathEscape(issuerID))
 	c.logger.Debug("Fetching LEI issuer", "id", issuerID, "url", reqURL)
 
 	var resp SingleResponse[LEIIssuer]

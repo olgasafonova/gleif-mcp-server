@@ -183,7 +183,7 @@ FAILS WHEN: LEI format invalid (must be 20 alphanumeric chars), no relationships
 		Idempotent:  true,
 		Description: `Get details about a specific LEI issuer (Local Operating Unit / LOU) by ID. USE WHEN: "details on this LOU", "issuer info". Returns issuer name, country, status, website, and count of sponsored LEIs. For all issuers worldwide, use list_lei_issuers. FAILS WHEN: issuer ID not found (use list_lei_issuers to get valid IDs).`,
 		Parameters: []ParameterSpec{
-			{Name: "issuer_id", Type: "string", Description: "LEI issuer ID", Required: true, Example: "EVK05KS7XY1DEII3R011"},
+			{Name: "issuer_id", Type: "string", Description: "LEI issuer ID (4-32 alphanumeric characters)", Required: true, Pattern: `^[A-Z0-9]{4,32}$`, MinLength: intPtr(4), MaxLength: intPtr(32), Example: "EVK05KS7XY1DEII3R011"},
 		},
 	},
 
