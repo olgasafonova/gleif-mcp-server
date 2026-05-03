@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- API client refuses all redirects via `CheckRedirect` returning `http.ErrUseLastResponse`. The GLEIF API does not redirect under normal operation; without this guard, a misconfigured `BaseURL` or a wiki/proxy returning `Location: http://169.254.169.254/...` would pivot a lookup into a fetch against cloud metadata or other link-local internal services, with the body landing in the agent context. (security)
+
 ## [0.8.0] - 2026-05-03
 
 ### Fixed
