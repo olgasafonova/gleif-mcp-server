@@ -123,6 +123,19 @@ func NewClient(config Config, logger *slog.Logger) *Client {
 				MaxIdleConnsPerHost: 10,
 				IdleConnTimeout:     90 * time.Second,
 			},
+			// SECURITY: Refuse all redirects. The configured BaseURL
+			// (api.gleif.org by default, operator-overridable) is the only
+			// legitimate target. Without CheckRedirect, Go follows up to 10
+			// 3xx responses; a misconfigured deployment combined with a wiki
+			// or proxy returning Location: http://169.254.169.254/... would
+			// pivot the request to internal IPs (cloud metadata, link-local).
+			// GLEIF's API does not redirect under normal operation, so any
+			// 3xx is either misconfiguration or an SSRF attempt. Returning
+			// http.ErrUseLastResponse short-circuits the redirect and
+			// surfaces the 3xx to the caller as an error.
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		},
 		baseURL: config.BaseURL,
 		logger:  logger,
