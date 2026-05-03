@@ -1,11 +1,37 @@
 package gleif
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 )
+
+// cloneLEIRecord returns a deep copy of an LEIRecord. LEIRecord contains
+// nested slices (OtherNames, AddressLines) and pointer fields
+// (AssociatedEntity, SuccessorEntity, ValidationAuthority,
+// EntityExpirationDate/Reason), so a value copy of the top-level struct
+// would still share inner state. JSON round-trip is the simplest deep
+// copy that stays correct as the type evolves; cost is a few µs per
+// call, negligible against any GLEIF round-trip.
+//
+// Returns (nil, error) on marshal/unmarshal failure. Callers treat that
+// as a cache miss / silent skip rather than failing the request.
+func cloneLEIRecord(r *LEIRecord) (*LEIRecord, error) {
+	if r == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(r)
+	if err != nil {
+		return nil, err
+	}
+	var out LEIRecord
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
 
 // CacheConfig configures the cache behavior.
 type CacheConfig struct {
@@ -92,7 +118,8 @@ func NewCache(config CacheConfig) (*Cache, error) {
 	}, nil
 }
 
-// GetLEI retrieves a cached LEI record.
+// GetLEI retrieves a cached LEI record. Returns a deep copy so callers can
+// freely mutate without affecting the cache or other concurrent callers.
 func (c *Cache) GetLEI(lei string) (*LEIRecord, bool) {
 	if !c.config.Enabled || c.leiCache == nil {
 		return nil, false
@@ -109,20 +136,37 @@ func (c *Cache) GetLEI(lei string) (*LEIRecord, bool) {
 		return nil, false
 	}
 
+	out, err := cloneLEIRecord(entry.value)
+	if err != nil || out == nil {
+		// Treat clone failure as a cache miss rather than risk handing
+		// the shared pointer back to the caller.
+		c.mu.Lock()
+		c.stats.Misses++
+		c.mu.Unlock()
+		return nil, false
+	}
+
 	c.mu.Lock()
 	c.stats.Hits++
 	c.mu.Unlock()
-	return entry.value, true
+	return out, true
 }
 
-// SetLEI caches an LEI record.
+// SetLEI caches an LEI record. Stores a deep copy so subsequent caller
+// mutations of the passed-in record don't leak into the cache.
 func (c *Cache) SetLEI(lei string, record *LEIRecord) {
 	if !c.config.Enabled || c.leiCache == nil {
 		return
 	}
 
+	stored, err := cloneLEIRecord(record)
+	if err != nil || stored == nil {
+		// Skip caching rather than store an aliased pointer.
+		return
+	}
+
 	c.leiCache.Add(lei, cacheEntry[*LEIRecord]{
-		value:     record,
+		value:     stored,
 		expiresAt: time.Now().Add(c.config.LEIRecordTTL),
 	})
 }

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - API client refuses all redirects via `CheckRedirect` returning `http.ErrUseLastResponse`. The GLEIF API does not redirect under normal operation; without this guard, a misconfigured `BaseURL` or a wiki/proxy returning `Location: http://169.254.169.254/...` would pivot a lookup into a fetch against cloud metadata or other link-local internal services, with the body landing in the agent context. (security)
+- LEI record cache no longer returns aliased pointers. Previously `SetLEI` stored the caller's pointer as-is and `GetLEI` handed the same pointer to every cache-hit caller; any future handler mutating a returned field (redaction, normalization, locale fix-ups) would silently corrupt cached state for every other concurrent caller. Cache now deep-copies on both store and retrieval. (correctness)
 
 ## [0.8.0] - 2026-05-03
 
