@@ -79,14 +79,16 @@ func TestNewServerErrorDropsBody(t *testing.T) {
 }
 
 // newTestClient returns a Client pointed at a test server with sane defaults
-// (high rate-limit + large burst so the limiter doesn't gate test responses).
+// (high rate-limit + large burst so the limiter doesn't gate test responses;
+// cache enabled so cache-behavior tests work as in production).
 func newTestClient(baseURL string) *Client {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return NewClient(Config{
-		BaseURL:   baseURL,
-		Timeout:   5 * time.Second,
-		RateLimit: 1000,
-		BurstSize: 1000,
+		BaseURL:     baseURL,
+		Timeout:     5 * time.Second,
+		RateLimit:   1000,
+		BurstSize:   1000,
+		EnableCache: true,
 	}, logger)
 }
 
