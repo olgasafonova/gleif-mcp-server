@@ -866,9 +866,9 @@ func TestGetHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := registry.getHandler(tt.toolName)
+			handler := registry.lookupHandler(tt.toolName)
 			if handler == nil && !tt.wantNil {
-				t.Errorf("getHandler(%q) returned nil", tt.toolName)
+				t.Errorf("lookupHandler(%q) returned nil", tt.toolName)
 			}
 		})
 	}
@@ -877,7 +877,7 @@ func TestGetHandler(t *testing.T) {
 // TestUnknownToolHandler tests that unknown tools return an error.
 func TestUnknownToolHandler(t *testing.T) {
 	registry := newTestRegistry("http://unused")
-	handler := registry.getHandler("nonexistent_tool")
+	handler := registry.lookupHandler("nonexistent_tool")
 	req := makeRequest(map[string]any{})
 
 	result, err := handler(context.Background(), req)

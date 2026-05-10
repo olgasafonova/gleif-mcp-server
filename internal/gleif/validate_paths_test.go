@@ -1,7 +1,6 @@
 package gleif
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
@@ -63,17 +62,16 @@ func TestValidateIssuerID_AcceptsRealisticIDs(t *testing.T) {
 	}
 }
 
-// TestGetLEIIssuer_RejectsInjectionBeforeHTTP exercises the integrated path
-// through GetLEIIssuer and asserts the validator rejects path-injection
-// payloads before any HTTP request is constructed.
-func TestGetLEIIssuer_RejectsInjectionBeforeHTTP(t *testing.T) {
-	c := &Client{baseURL: "https://example.invalid"}
-
+// TestParseIssuerID_RejectsInjection asserts ParseIssuerID rejects path-
+// injection payloads before any URL is constructed. The typed signature on
+// GetLEIIssuer means a malformed string can't reach the URL builder; the
+// type system enforces what was previously a runtime check.
+func TestParseIssuerID_RejectsInjection(t *testing.T) {
 	maliciousID := "../lei-records/SOMELEI"
-	_, err := c.GetLEIIssuer(context.Background(), maliciousID)
+	_, err := ParseIssuerID(maliciousID)
 
 	if err == nil {
-		t.Fatal("GetLEIIssuer accepted path-injection payload; expected validator rejection")
+		t.Fatal("ParseIssuerID accepted path-injection payload; expected rejection")
 	}
 	if !strings.Contains(err.Error(), "issuer_id") {
 		t.Errorf("error did not mention issuer_id: %v", err)
@@ -83,20 +81,18 @@ func TestGetLEIIssuer_RejectsInjectionBeforeHTTP(t *testing.T) {
 	}
 }
 
-// TestSearchByISIN_QuerySmugglingRejected verifies the ISIN format check
-// blocks payloads that would smuggle additional query parameters via raw
-// fmt.Sprintf interpolation. Even though the URL builder now uses
-// url.Values, the format check is the primary gate.
-func TestSearchByISIN_QuerySmugglingRejected(t *testing.T) {
-	c := newTestClient("https://example.invalid")
-
+// TestParseISIN_QuerySmugglingRejected verifies the ISIN format check blocks
+// payloads that would smuggle additional query parameters. With typed
+// signatures, ParseISIN is the only gate; SearchByISIN can no longer be
+// called with an unparsed string.
+func TestParseISIN_QuerySmugglingRejected(t *testing.T) {
 	// 12-character payload that would have smuggled query params via
 	// the previous fmt.Sprintf path: "X&y=z&w=qABC".
 	smugglingPayload := "X&y=z&w=qABC"
-	_, err := c.SearchByISIN(context.Background(), smugglingPayload)
+	_, err := ParseISIN(smugglingPayload)
 
 	if err == nil {
-		t.Fatal("SearchByISIN accepted smuggling payload; expected validator rejection")
+		t.Fatal("ParseISIN accepted smuggling payload; expected rejection")
 	}
 	if !strings.Contains(err.Error(), "ISIN") {
 		t.Errorf("error did not mention ISIN: %v", err)

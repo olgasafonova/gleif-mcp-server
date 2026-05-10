@@ -43,9 +43,9 @@ func TestValidateLEICheckDigits(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := validateLEICheckDigits(tt.lei)
+			got := LEI(tt.lei).HasValidCheckDigits()
 			if got != tt.valid {
-				t.Errorf("validateLEICheckDigits(%q) = %v, want %v", tt.lei, got, tt.valid)
+				t.Errorf("LEI(%q).HasValidCheckDigits() = %v, want %v", tt.lei, got, tt.valid)
 			}
 		})
 	}
@@ -124,18 +124,22 @@ func TestBICValidation(t *testing.T) {
 				EnableCache: false,
 			}, logger)
 
-			_, err := clientWithMock.SearchByBIC(context.Background(), tt.bic)
-
-			if tt.valid {
-				if err != nil {
-					var apiErr *APIError
-					if ok := isAPIError(err, &apiErr); ok && apiErr.Code == ErrCodeInvalidFormat {
-						t.Errorf("SearchByBIC(%q) returned format error, expected valid", tt.bic)
-					}
+			parsed, parseErr := ParseBIC(tt.bic)
+			if !tt.valid {
+				if parseErr == nil {
+					t.Errorf("ParseBIC(%q) = nil, expected error", tt.bic)
 				}
-			} else {
-				if err == nil {
-					t.Errorf("SearchByBIC(%q) = nil, expected error", tt.bic)
+				return
+			}
+			if parseErr != nil {
+				t.Errorf("ParseBIC(%q) returned error: %v", tt.bic, parseErr)
+				return
+			}
+			_, err := clientWithMock.SearchByBIC(context.Background(), parsed)
+			if err != nil {
+				var apiErr *APIError
+				if ok := isAPIError(err, &apiErr); ok && apiErr.Code == ErrCodeInvalidFormat {
+					t.Errorf("SearchByBIC(%q) returned format error, expected valid", tt.bic)
 				}
 			}
 		})
@@ -179,18 +183,22 @@ func TestISINValidation(t *testing.T) {
 				EnableCache: false,
 			}, logger)
 
-			_, err := clientWithMock.SearchByISIN(context.Background(), tt.isin)
-
-			if tt.valid {
-				if err != nil {
-					var apiErr *APIError
-					if ok := isAPIError(err, &apiErr); ok && apiErr.Code == ErrCodeInvalidFormat {
-						t.Errorf("SearchByISIN(%q) returned format error, expected valid", tt.isin)
-					}
+			parsed, parseErr := ParseISIN(tt.isin)
+			if !tt.valid {
+				if parseErr == nil {
+					t.Errorf("ParseISIN(%q) = nil, expected error", tt.isin)
 				}
-			} else {
-				if err == nil {
-					t.Errorf("SearchByISIN(%q) = nil, expected error", tt.isin)
+				return
+			}
+			if parseErr != nil {
+				t.Errorf("ParseISIN(%q) returned error: %v", tt.isin, parseErr)
+				return
+			}
+			_, err := clientWithMock.SearchByISIN(context.Background(), parsed)
+			if err != nil {
+				var apiErr *APIError
+				if ok := isAPIError(err, &apiErr); ok && apiErr.Code == ErrCodeInvalidFormat {
+					t.Errorf("SearchByISIN(%q) returned format error, expected valid", tt.isin)
 				}
 			}
 		})
@@ -233,18 +241,22 @@ func TestCountryValidation(t *testing.T) {
 				EnableCache: false,
 			}, logger)
 
-			_, err := clientWithMock.SearchByCountry(context.Background(), tt.country, 10)
-
-			if tt.valid {
-				if err != nil {
-					var apiErr *APIError
-					if ok := isAPIError(err, &apiErr); ok && apiErr.Code == ErrCodeInvalidFormat {
-						t.Errorf("SearchByCountry(%q) returned format error, expected valid", tt.country)
-					}
+			parsed, parseErr := ParseCountry(tt.country)
+			if !tt.valid {
+				if parseErr == nil {
+					t.Errorf("ParseCountry(%q) = nil, expected error", tt.country)
 				}
-			} else {
-				if err == nil {
-					t.Errorf("SearchByCountry(%q) = nil, expected error", tt.country)
+				return
+			}
+			if parseErr != nil {
+				t.Errorf("ParseCountry(%q) returned error: %v", tt.country, parseErr)
+				return
+			}
+			_, err := clientWithMock.SearchByCountry(context.Background(), parsed, 10)
+			if err != nil {
+				var apiErr *APIError
+				if ok := isAPIError(err, &apiErr); ok && apiErr.Code == ErrCodeInvalidFormat {
+					t.Errorf("SearchByCountry(%q) returned format error, expected valid", tt.country)
 				}
 			}
 		})
@@ -463,7 +475,7 @@ func TestGetLEIWithMockServer(t *testing.T) {
 			EnableCache: false,
 		}, logger)
 
-		record, err := client.GetLEI(context.Background(), "HWUPKR0MPOU8FGXBT394")
+		record, err := client.GetLEI(context.Background(), LEI("HWUPKR0MPOU8FGXBT394"))
 		if err != nil {
 			t.Fatalf("GetLEI failed: %v", err)
 		}
@@ -476,14 +488,11 @@ func TestGetLEIWithMockServer(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid LEI format", func(t *testing.T) {
-		client := NewClient(DefaultConfig(), logger)
-
-		_, err := client.GetLEI(context.Background(), "INVALID")
+	t.Run("invalid LEI format rejected at Parse", func(t *testing.T) {
+		_, err := ParseLEI("INVALID")
 		if err == nil {
-			t.Error("Expected error for invalid LEI")
+			t.Fatal("ParseLEI(\"INVALID\") returned nil; expected rejection")
 		}
-
 		var apiErr *APIError
 		if !isAPIError(err, &apiErr) || apiErr.Code != ErrCodeInvalidFormat {
 			t.Errorf("Expected invalid_format error, got %v", err)
@@ -505,7 +514,7 @@ func TestGetLEIWithMockServer(t *testing.T) {
 			EnableCache: false,
 		}, logger)
 
-		_, err := client.GetLEI(context.Background(), "HWUPKR0MPOU8FGXBT394")
+		_, err := client.GetLEI(context.Background(), LEI("HWUPKR0MPOU8FGXBT394"))
 		if err == nil {
 			t.Error("Expected error for not found")
 		}
@@ -531,7 +540,7 @@ func TestGetLEIWithMockServer(t *testing.T) {
 			EnableCache: false,
 		}, logger)
 
-		_, err := client.GetLEI(context.Background(), "HWUPKR0MPOU8FGXBT394")
+		_, err := client.GetLEI(context.Background(), LEI("HWUPKR0MPOU8FGXBT394"))
 		if err == nil {
 			t.Error("Expected error for rate limited")
 		}
@@ -549,16 +558,16 @@ func TestBatchLEIValidation(t *testing.T) {
 	client := NewClient(DefaultConfig(), logger)
 
 	t.Run("empty list", func(t *testing.T) {
-		_, err := client.GetBatchLEI(context.Background(), []string{})
+		_, err := client.GetBatchLEI(context.Background(), []LEI{})
 		if err == nil {
 			t.Error("Expected error for empty LEI list")
 		}
 	})
 
 	t.Run("too many LEIs", func(t *testing.T) {
-		leis := make([]string, 101)
+		leis := make([]LEI, 101)
 		for i := range leis {
-			leis[i] = "HWUPKR0MPOU8FGXBT394"
+			leis[i] = LEI("HWUPKR0MPOU8FGXBT394")
 		}
 		_, err := client.GetBatchLEI(context.Background(), leis)
 		if err == nil {
@@ -566,10 +575,12 @@ func TestBatchLEIValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid LEI in batch", func(t *testing.T) {
-		_, err := client.GetBatchLEI(context.Background(), []string{"HWUPKR0MPOU8FGXBT394", "INVALID"})
-		if err == nil {
-			t.Error("Expected error for invalid LEI in batch")
+	t.Run("invalid LEI rejected at Parse", func(t *testing.T) {
+		// With typed signatures, batch validation is the caller's concern.
+		// ParseLEI is the format gate; tools/handlers.parseBatchLEIs
+		// surfaces the first failure to the MCP caller.
+		if _, err := ParseLEI("INVALID"); err == nil {
+			t.Error("ParseLEI(\"INVALID\") returned nil; expected rejection")
 		}
 	})
 }

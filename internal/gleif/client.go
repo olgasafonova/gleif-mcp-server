@@ -7,8 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"regexp"
-	"strings"
 	"time"
 
 	"golang.org/x/sync/singleflight"
@@ -22,52 +20,13 @@ const (
 	// DefaultTimeout for HTTP requests.
 	DefaultTimeout = 30 * time.Second
 
-	// LEI format: 20 alphanumeric characters.
-	LEIPattern = `^[A-Z0-9]{4}[A-Z0-9]{2}[A-Z0-9]{12}[0-9]{2}$`
-
-	// ISIN format: 2-letter country code + 9 alphanumeric + 1 check digit (12 total).
-	// Matches the Pattern declared in tools/definitions.go for search_by_isin.
-	ISINPattern = `^[A-Z]{2}[A-Z0-9]{10}$`
-
-	// BIC format: 8 or 11 characters (matches search_by_bic tool spec Pattern).
-	BICPattern = `^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$`
-
-	// CountryPattern: ISO 3166-1 alpha-2.
-	CountryPattern = `^[A-Z]{2}$`
-
-	// IssuerIDPattern: LEI issuer (LOU) ID. GLEIF issues these as 20-character
-	// alphanumeric (often the LEI of the issuing organization), but historic
-	// IDs can be shorter alphanumeric tokens. Allow 4-32 alphanumeric chars to
-	// cover both shapes without admitting URL-pivot characters.
-	IssuerIDPattern = `^[A-Z0-9]{4,32}$`
-
 	// Rate limit: GLEIF allows 60/min, we use 50 to be safe.
 	DefaultRateLimit = 50.0 / 60.0 // ~0.83 requests per second
 	DefaultBurstSize = 10
-)
 
-var (
-	leiRegex      = regexp.MustCompile(LEIPattern)
-	isinRegex     = regexp.MustCompile(ISINPattern)
-	bicRegex      = regexp.MustCompile(BICPattern)
-	countryRegex  = regexp.MustCompile(CountryPattern)
-	issuerIDRegex = regexp.MustCompile(IssuerIDPattern)
+	// maxBatchSize is the upper bound on a single batch lookup.
+	maxBatchSize = 100
 )
-
-// ValidateIssuerID checks that an LEI issuer (LOU) ID is well-formed and
-// safe for URL-path interpolation. Without this check, an adversarial MCP
-// caller could send issuer_id="../lei-records/SOMELEI" and pivot the
-// request away from /lei-issuers/ to a different GLEIF endpoint.
-func ValidateIssuerID(id string) error {
-	id = strings.ToUpper(strings.TrimSpace(id))
-	if id == "" {
-		return NewInvalidFormatError("issuer_id", "is required")
-	}
-	if !issuerIDRegex.MatchString(id) {
-		return NewInvalidFormatError("issuer_id", "must be 4-32 alphanumeric characters")
-	}
-	return nil
-}
 
 // Config holds client configuration.
 type Config struct {
@@ -137,10 +96,6 @@ func NewClient(config Config, logger *slog.Logger) *Client {
 			// 3xx responses; a misconfigured deployment combined with a wiki
 			// or proxy returning Location: http://169.254.169.254/... would
 			// pivot the request to internal IPs (cloud metadata, link-local).
-			// GLEIF's API does not redirect under normal operation, so any
-			// 3xx is either misconfiguration or an SSRF attempt. Returning
-			// http.ErrUseLastResponse short-circuits the redirect and
-			// surfaces the 3xx to the caller as an error.
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
@@ -158,7 +113,6 @@ func (c *Client) doRequestWithRetry(ctx context.Context, url string, result any)
 	var lastErr error
 
 	for attempt := 0; attempt <= c.config.MaxRetries; attempt++ {
-		// Wait for rate limiter
 		if err := c.limiter.Wait(ctx); err != nil {
 			return NewRateLimitError(60)
 		}
@@ -169,20 +123,13 @@ func (c *Client) doRequestWithRetry(ctx context.Context, url string, result any)
 		}
 
 		lastErr = err
-
-		// Check if retryable
 		if !IsRetryable(err) {
 			return err
 		}
 
-		// Exponential backoff
 		if attempt < c.config.MaxRetries {
-			delay := c.config.RetryDelay * time.Duration(1<<attempt)
-			c.logger.Debug("Retrying request", "attempt", attempt+1, "delay", delay, "error", err)
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(delay):
+			if waitErr := c.waitForRetry(ctx, attempt, err); waitErr != nil {
+				return waitErr
 			}
 		}
 	}
@@ -190,13 +137,42 @@ func (c *Client) doRequestWithRetry(ctx context.Context, url string, result any)
 	return lastErr
 }
 
+// waitForRetry sleeps with exponential backoff and respects context cancellation.
+func (c *Client) waitForRetry(ctx context.Context, attempt int, err error) error {
+	delay := c.config.RetryDelay * time.Duration(1<<attempt)
+	c.logger.Debug("Retrying request", "attempt", attempt+1, "delay", delay, "error", err)
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(delay):
+		return nil
+	}
+}
+
 // doRequest executes an HTTP GET request and decodes the JSON response.
 func (c *Client) doRequest(ctx context.Context, url string, result any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	body, statusCode, err := c.executeAndRead(ctx, url)
 	if err != nil {
-		return NewNetworkError(err)
+		return err
 	}
 
+	if statusErr := mapStatusToError(statusCode); statusErr != nil {
+		return statusErr
+	}
+
+	if err := json.Unmarshal(body, result); err != nil {
+		return fmt.Errorf("decoding response: %w", err)
+	}
+	return nil
+}
+
+// executeAndRead builds the request, executes it, and reads the response body.
+// Extracted from doRequest to flatten its conditional structure.
+func (c *Client) executeAndRead(ctx context.Context, reqURL string) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, 0, NewNetworkError(err)
+	}
 	req.Header.Set("Accept", "application/vnd.api+json")
 	req.Header.Set("Accept-Encoding", "gzip")
 	req.Header.Set("User-Agent", "gleif-mcp-server/0.2.0")
@@ -204,47 +180,41 @@ func (c *Client) doRequest(ctx context.Context, url string, result any) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return NewTimeoutError()
+			return nil, 0, NewTimeoutError()
 		}
-		return NewNetworkError(err)
+		return nil, 0, NewNetworkError(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return NewNetworkError(err)
+		return nil, resp.StatusCode, NewNetworkError(err)
 	}
+	return body, resp.StatusCode, nil
+}
 
-	switch resp.StatusCode {
-	case http.StatusOK:
-		// Success
-	case http.StatusNotFound:
+// mapStatusToError maps an HTTP status code to a sanitized APIError. Returns
+// nil for 200 OK. Never includes raw response bodies in the returned error;
+// HG-2 in code-review-prompts.md requires sanitization at this boundary so
+// HTML/CDN error pages and prompt-injection echoes never reach the MCP caller.
+func mapStatusToError(statusCode int) error {
+	switch {
+	case statusCode == http.StatusOK:
+		return nil
+	case statusCode == http.StatusNotFound:
 		return NewNotFoundError("LEI record")
-	case http.StatusTooManyRequests:
+	case statusCode == http.StatusTooManyRequests:
 		return NewRateLimitError(60)
+	case statusCode >= 500:
+		return NewServerError(statusCode, "")
 	default:
-		// Don't leak raw response bodies into the MCP caller's error string.
-		// HTML/CDN error pages, MITM proxy responses, and prompt-injection
-		// payloads in echoed input are all blocked at this gate. Operators
-		// can still recover the body via debug-level request logging; only
-		// the MCP caller's error string is sanitized. See HG-2 in
-		// rules/code-review-prompts.md.
-		if resp.StatusCode >= 500 {
-			return NewServerError(resp.StatusCode, "")
-		}
 		return &APIError{
 			Code:       ErrCodeServerError,
-			Message:    http.StatusText(resp.StatusCode),
-			StatusCode: resp.StatusCode,
+			Message:    http.StatusText(statusCode),
+			StatusCode: statusCode,
 			Retryable:  false,
 		}
 	}
-
-	if err := json.Unmarshal(body, result); err != nil {
-		return fmt.Errorf("decoding response: %w", err)
-	}
-
-	return nil
 }
 
 // CacheStats returns cache performance statistics.
@@ -255,4 +225,16 @@ func (c *Client) CacheStats() CacheStats {
 // ClearCache clears all cached data.
 func (c *Client) ClearCache() {
 	c.cache.Clear()
+}
+
+// extractLEIRecords lifts records out of a GLEIF JSON:API envelope, copying
+// the LEI from the JSON:API id field into the LEIRecord struct so callers
+// see a fully-populated record. Shared between lookup and search paths.
+func extractLEIRecords(resp APIResponse[LEIRecord]) []LEIRecord {
+	records := make([]LEIRecord, len(resp.Data))
+	for i, item := range resp.Data {
+		records[i] = item.Attributes
+		records[i].LEI = item.ID
+	}
+	return records
 }
