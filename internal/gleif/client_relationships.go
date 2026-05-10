@@ -8,81 +8,86 @@ import (
 )
 
 // GetRelationships retrieves parent/child relationships for an LEI.
-func (c *Client) GetRelationships(ctx context.Context, lei string, relType string) ([]Relationship, error) {
-	lei = strings.ToUpper(strings.TrimSpace(lei))
-	if !leiRegex.MatchString(lei) {
-		return nil, NewInvalidFormatError("LEI", "must be 20 alphanumeric characters")
-	}
+func (c *Client) GetRelationships(ctx context.Context, lei LEI, relType string) ([]Relationship, error) {
+	endpoint := relationshipEndpoint(relType)
+	reqURL := fmt.Sprintf("%s/lei-records/%s/%s", c.baseURL, string(lei), endpoint)
+	c.logger.Debug("Fetching relationships", "lei", string(lei), "type", relType, "url", reqURL)
 
-	// Build relationship URL
-	var endpoint string
+	return c.fetchRelationships(ctx, reqURL)
+}
+
+// relationshipEndpoint maps a relationship type to its GLEIF endpoint
+// suffix. Unknown types fall through to direct-parent (matches the prior
+// switch's default arm).
+func relationshipEndpoint(relType string) string {
 	switch strings.ToLower(relType) {
-	case "direct-parent", "parent":
-		endpoint = "direct-parent-relationship"
 	case "ultimate-parent", "ultimate":
-		endpoint = "ultimate-parent-relationship"
+		return "ultimate-parent-relationship"
 	case "direct-children", "children":
-		endpoint = "direct-child-relationships"
+		return "direct-child-relationships"
 	case "fund-manager":
-		endpoint = "fund-manager-relationship"
+		return "fund-manager-relationship"
 	case "umbrella-fund":
-		endpoint = "umbrella-fund-relationship"
+		return "umbrella-fund-relationship"
 	case "sub-funds":
-		endpoint = "sub-fund-relationships"
+		return "sub-fund-relationships"
 	default:
-		// Get all relationships
-		endpoint = "direct-parent-relationship"
+		return "direct-parent-relationship"
+	}
+}
+
+// relData mirrors GLEIF's relationship envelope. Hoisted out of GetRelationships
+// so both array and single-shape decode paths share the same struct.
+type relData struct {
+	Type       string `json:"type"`
+	ID         string `json:"id"`
+	Attributes struct {
+		Relationship Relationship `json:"relationship"`
+	} `json:"attributes"`
+}
+
+// fetchRelationships handles GLEIF's two response shapes for relationship
+// endpoints: list (children/funds) and singleton (parent). Tries list first,
+// falls through to singleton on decode failure.
+func (c *Client) fetchRelationships(ctx context.Context, reqURL string) ([]Relationship, error) {
+	type relListResponse struct {
+		Data []relData `json:"data"`
+	}
+	type relSingleResponse struct {
+		Data relData `json:"data"`
 	}
 
-	reqURL := fmt.Sprintf("%s/lei-records/%s/%s", c.baseURL, lei, endpoint)
-	c.logger.Debug("Fetching relationships", "lei", lei, "type", relType, "url", reqURL)
-
-	// Relationship responses have a different structure
-	type RelData struct {
-		Type       string `json:"type"`
-		ID         string `json:"id"`
-		Attributes struct {
-			Relationship Relationship `json:"relationship"`
-		} `json:"attributes"`
-	}
-	type RelResponse struct {
-		Data []RelData `json:"data"`
+	var listResp relListResponse
+	listErr := c.doRequestWithRetry(ctx, reqURL, &listResp)
+	if listErr == nil {
+		return relationshipsFromList(listResp.Data), nil
 	}
 
-	var resp RelResponse
-	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
-		// Check if it's a single response (for parent relationships)
-		type SingleRelResponse struct {
-			Data RelData `json:"data"`
-		}
-		var singleResp SingleRelResponse
-		if err2 := c.doRequestWithRetry(ctx, reqURL, &singleResp); err2 != nil {
-			return nil, err
-		}
-		if singleResp.Data.ID != "" {
-			return []Relationship{singleResp.Data.Attributes.Relationship}, nil
-		}
-		return nil, err
+	var singleResp relSingleResponse
+	if err := c.doRequestWithRetry(ctx, reqURL, &singleResp); err != nil {
+		return nil, listErr
 	}
+	if singleResp.Data.ID == "" {
+		return nil, listErr
+	}
+	return []Relationship{singleResp.Data.Attributes.Relationship}, nil
+}
 
-	rels := make([]Relationship, len(resp.Data))
-	for i, item := range resp.Data {
+func relationshipsFromList(data []relData) []Relationship {
+	rels := make([]Relationship, len(data))
+	for i, item := range data {
 		rels[i] = item.Attributes.Relationship
 	}
-	return rels, nil
+	return rels
 }
 
 // GetLEIIssuer retrieves information about an LEI issuer (LOU).
-func (c *Client) GetLEIIssuer(ctx context.Context, issuerID string) (*LEIIssuer, error) {
-	if err := ValidateIssuerID(issuerID); err != nil {
-		return nil, err
-	}
-	issuerID = strings.ToUpper(strings.TrimSpace(issuerID))
+func (c *Client) GetLEIIssuer(ctx context.Context, issuerID IssuerID) (*LEIIssuer, error) {
 	// url.PathEscape is a no-op for validator-approved IDs (the regex already
 	// restricts to URL-safe chars), but stays as belt-and-braces against
 	// future regex loosening.
-	reqURL := fmt.Sprintf("%s/lei-issuers/%s", c.baseURL, url.PathEscape(issuerID))
-	c.logger.Debug("Fetching LEI issuer", "id", issuerID, "url", reqURL)
+	reqURL := fmt.Sprintf("%s/lei-issuers/%s", c.baseURL, url.PathEscape(string(issuerID)))
+	c.logger.Debug("Fetching LEI issuer", "id", string(issuerID), "url", reqURL)
 
 	var resp SingleResponse[LEIIssuer]
 	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
@@ -113,14 +118,9 @@ func (c *Client) ListLEIIssuers(ctx context.Context) ([]LEIIssuer, error) {
 }
 
 // GetReportingExceptions retrieves reporting exceptions for an LEI.
-func (c *Client) GetReportingExceptions(ctx context.Context, lei string) ([]ReportingException, error) {
-	lei = strings.ToUpper(strings.TrimSpace(lei))
-	if !leiRegex.MatchString(lei) {
-		return nil, NewInvalidFormatError("LEI", "must be 20 alphanumeric characters")
-	}
-
-	reqURL := fmt.Sprintf("%s/lei-records/%s/reporting-exceptions", c.baseURL, lei)
-	c.logger.Debug("Fetching reporting exceptions", "lei", lei, "url", reqURL)
+func (c *Client) GetReportingExceptions(ctx context.Context, lei LEI) ([]ReportingException, error) {
+	reqURL := fmt.Sprintf("%s/lei-records/%s/reporting-exceptions", c.baseURL, string(lei))
+	c.logger.Debug("Fetching reporting exceptions", "lei", string(lei), "url", reqURL)
 
 	var resp APIResponse[ReportingException]
 	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
