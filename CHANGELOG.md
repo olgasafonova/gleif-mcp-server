@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-10
+
+### Changed
+- Internal refactor: domain identifier types (`LEI`, `BIC`, `ISIN`, `Country`, `IssuerID`) with `Parse*` constructors at the MCP boundary. Client method signatures now take typed values instead of raw strings; format validation lives in the type system. Public API of `internal/gleif` package is unchanged for MCP callers (tool surface identical) but Go-package consumers will see typed parameters.
+- Internal refactor: `client.go` split into `client.go` (HTTP plumbing), `client_lookup.go`, `client_search.go`, `client_relationships.go`, `client_validate.go` by concern. Plus decomposed complex methods (`doRequest`, `Autocomplete`, `GetRelationships`, `GetBatchLEI`) into single-responsibility helpers and replaced the 13-arm handler `switch` with a map dispatch. Result: every source file scores at Green (≥9.0) or Optimal (10.0) on CodeScene Code Health.
+- Bumped `github.com/modelcontextprotocol/go-sdk` to v1.6.0.
+
 ### Fixed
 - API client refuses all redirects via `CheckRedirect` returning `http.ErrUseLastResponse`. The GLEIF API does not redirect under normal operation; without this guard, a misconfigured `BaseURL` or a wiki/proxy returning `Location: http://169.254.169.254/...` would pivot a lookup into a fetch against cloud metadata or other link-local internal services, with the body landing in the agent context. (security)
 - LEI record cache no longer returns aliased pointers. Previously `SetLEI` stored the caller's pointer as-is and `GetLEI` handed the same pointer to every cache-hit caller; any future handler mutating a returned field (redaction, normalization, locale fix-ups) would silently corrupt cached state for every other concurrent caller. Cache now deep-copies on both store and retrieval. (correctness)
