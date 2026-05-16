@@ -118,37 +118,67 @@ func NewCache(config CacheConfig) (*Cache, error) {
 	}, nil
 }
 
-// GetLEI retrieves a cached LEI record. Returns a deep copy so callers can
-// freely mutate without affecting the cache or other concurrent callers.
-func (c *Cache) GetLEI(lei string) (*LEIRecord, bool) {
-	if !c.config.Enabled || c.leiCache == nil {
-		return nil, false
-	}
-
-	entry, ok := c.leiCache.Get(lei)
-	if !ok || entry.isExpired() {
-		c.mu.Lock()
-		c.stats.Misses++
-		c.mu.Unlock()
-		if ok {
-			c.leiCache.Remove(lei)
-		}
-		return nil, false
-	}
-
-	out, err := cloneLEIRecord(entry.value)
-	if err != nil || out == nil {
-		// Treat clone failure as a cache miss rather than risk handing
-		// the shared pointer back to the caller.
-		c.mu.Lock()
-		c.stats.Misses++
-		c.mu.Unlock()
-		return nil, false
-	}
-
+// recordHit and recordMiss centralize the locked counter updates used by
+// every Get* method on the cache.
+func (c *Cache) recordHit() {
 	c.mu.Lock()
 	c.stats.Hits++
 	c.mu.Unlock()
+}
+
+func (c *Cache) recordMiss() {
+	c.mu.Lock()
+	c.stats.Misses++
+	c.mu.Unlock()
+}
+
+// lookupEntry performs the shared "check enabled, fetch, expire-check, count"
+// flow for every typed cache. It returns the stored value and ok=true on a
+// hit. On a miss (disabled cache, absent key, or expired entry) it bumps the
+// miss counter, evicts any stale entry, and returns the zero value with
+// ok=false.
+//
+// Because Go generics don't allow methods to be generic, this is a package-
+// level function taking the cache, the typed LRU, and the key.
+func lookupEntry[T any](
+	c *Cache,
+	store *lru.Cache[string, cacheEntry[T]],
+	key string,
+) (T, bool) {
+	var zero T
+	if !c.config.Enabled || store == nil {
+		return zero, false
+	}
+
+	entry, ok := store.Get(key)
+	if !ok || entry.isExpired() {
+		c.recordMiss()
+		if ok {
+			store.Remove(key)
+		}
+		return zero, false
+	}
+
+	return entry.value, true
+}
+
+// GetLEI retrieves a cached LEI record. Returns a deep copy so callers can
+// freely mutate without affecting the cache or other concurrent callers.
+func (c *Cache) GetLEI(lei string) (*LEIRecord, bool) {
+	value, ok := lookupEntry(c, c.leiCache, lei)
+	if !ok {
+		return nil, false
+	}
+
+	out, err := cloneLEIRecord(value)
+	if err != nil || out == nil {
+		// Treat clone failure as a cache miss rather than risk handing
+		// the shared pointer back to the caller.
+		c.recordMiss()
+		return nil, false
+	}
+
+	c.recordHit()
 	return out, true
 }
 
@@ -173,25 +203,12 @@ func (c *Cache) SetLEI(lei string, record *LEIRecord) {
 
 // GetValidation retrieves a cached validation result.
 func (c *Cache) GetValidation(lei string) (*ValidationResult, bool) {
-	if !c.config.Enabled || c.validCache == nil {
+	value, ok := lookupEntry(c, c.validCache, lei)
+	if !ok {
 		return nil, false
 	}
-
-	entry, ok := c.validCache.Get(lei)
-	if !ok || entry.isExpired() {
-		c.mu.Lock()
-		c.stats.Misses++
-		c.mu.Unlock()
-		if ok {
-			c.validCache.Remove(lei)
-		}
-		return nil, false
-	}
-
-	c.mu.Lock()
-	c.stats.Hits++
-	c.mu.Unlock()
-	return entry.value, true
+	c.recordHit()
+	return value, true
 }
 
 // SetValidation caches a validation result.
@@ -208,25 +225,12 @@ func (c *Cache) SetValidation(lei string, result *ValidationResult) {
 
 // GetSearch retrieves cached search results.
 func (c *Cache) GetSearch(key string) ([]LEIRecord, bool) {
-	if !c.config.Enabled || c.searchCache == nil {
+	value, ok := lookupEntry(c, c.searchCache, key)
+	if !ok {
 		return nil, false
 	}
-
-	entry, ok := c.searchCache.Get(key)
-	if !ok || entry.isExpired() {
-		c.mu.Lock()
-		c.stats.Misses++
-		c.mu.Unlock()
-		if ok {
-			c.searchCache.Remove(key)
-		}
-		return nil, false
-	}
-
-	c.mu.Lock()
-	c.stats.Hits++
-	c.mu.Unlock()
-	return entry.value, true
+	c.recordHit()
+	return value, true
 }
 
 // SetSearch caches search results.
@@ -243,25 +247,12 @@ func (c *Cache) SetSearch(key string, records []LEIRecord) {
 
 // GetAutocomplete retrieves cached autocomplete results.
 func (c *Cache) GetAutocomplete(prefix string) ([]AutocompleteResult, bool) {
-	if !c.config.Enabled || c.autoCache == nil {
+	value, ok := lookupEntry(c, c.autoCache, prefix)
+	if !ok {
 		return nil, false
 	}
-
-	entry, ok := c.autoCache.Get(prefix)
-	if !ok || entry.isExpired() {
-		c.mu.Lock()
-		c.stats.Misses++
-		c.mu.Unlock()
-		if ok {
-			c.autoCache.Remove(prefix)
-		}
-		return nil, false
-	}
-
-	c.mu.Lock()
-	c.stats.Hits++
-	c.mu.Unlock()
-	return entry.value, true
+	c.recordHit()
+	return value, true
 }
 
 // SetAutocomplete caches autocomplete results.
