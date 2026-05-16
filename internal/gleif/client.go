@@ -113,28 +113,43 @@ func (c *Client) doRequestWithRetry(ctx context.Context, url string, result any)
 	var lastErr error
 
 	for attempt := 0; attempt <= c.config.MaxRetries; attempt++ {
-		if err := c.limiter.Wait(ctx); err != nil {
-			return NewRateLimitError(60)
-		}
-
-		err := c.doRequest(ctx, url, result)
-		if err == nil {
-			return nil
-		}
-
-		lastErr = err
-		if !IsRetryable(err) {
+		done, err := c.tryRequest(ctx, attempt, url, result)
+		if done {
 			return err
 		}
-
-		if attempt < c.config.MaxRetries {
-			if waitErr := c.waitForRetry(ctx, attempt, err); waitErr != nil {
-				return waitErr
-			}
-		}
+		lastErr = err
 	}
 
 	return lastErr
+}
+
+// tryRequest performs one attempt of doRequestWithRetry. It returns done=true
+// when the caller should stop iterating (either success or a terminal error)
+// and done=false plus the underlying retryable error when another iteration
+// should run. The retry backoff is handled here so the caller stays linear.
+func (c *Client) tryRequest(ctx context.Context, attempt int, url string, result any) (bool, error) {
+	if err := c.limiter.Wait(ctx); err != nil {
+		return true, NewRateLimitError(60)
+	}
+
+	err := c.doRequest(ctx, url, result)
+	if err == nil {
+		return true, nil
+	}
+
+	if !IsRetryable(err) {
+		return true, err
+	}
+
+	if attempt >= c.config.MaxRetries {
+		return false, err
+	}
+
+	if waitErr := c.waitForRetry(ctx, attempt, err); waitErr != nil {
+		return true, waitErr
+	}
+
+	return false, err
 }
 
 // waitForRetry sleeps with exponential backoff and respects context cancellation.
