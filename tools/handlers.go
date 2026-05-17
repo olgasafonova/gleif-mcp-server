@@ -103,31 +103,51 @@ func buildPropertySchema(p ParameterSpec) map[string]any {
 		"type":        p.Type,
 		"description": p.Description,
 	}
-	if len(p.Enum) > 0 {
-		prop["enum"] = p.Enum
-	}
+	addLengthBounds(prop, p)
+	addNumericBounds(prop, p)
+	addEnumAndExample(prop, p)
+	addDefaultAndPattern(prop, p)
+	return prop
+}
+
+// addLengthBounds copies MinLength / MaxLength into the property map when set.
+func addLengthBounds(prop map[string]any, p ParameterSpec) {
 	if p.MinLength != nil {
 		prop["minLength"] = *p.MinLength
 	}
 	if p.MaxLength != nil {
 		prop["maxLength"] = *p.MaxLength
 	}
+}
+
+// addNumericBounds copies Minimum / Maximum into the property map when set.
+func addNumericBounds(prop map[string]any, p ParameterSpec) {
 	if p.Minimum != nil {
 		prop["minimum"] = *p.Minimum
 	}
 	if p.Maximum != nil {
 		prop["maximum"] = *p.Maximum
 	}
-	if p.Default != nil {
-		prop["default"] = p.Default
+}
+
+// addEnumAndExample copies enum and example values into the property map.
+func addEnumAndExample(prop map[string]any, p ParameterSpec) {
+	if len(p.Enum) > 0 {
+		prop["enum"] = p.Enum
 	}
 	if p.Example != nil {
 		prop["examples"] = []any{p.Example}
 	}
+}
+
+// addDefaultAndPattern copies Default and Pattern into the property map.
+func addDefaultAndPattern(prop map[string]any, p ParameterSpec) {
+	if p.Default != nil {
+		prop["default"] = p.Default
+	}
 	if p.Pattern != "" {
 		prop["pattern"] = p.Pattern
 	}
-	return prop
 }
 
 func (r *Registry) lookupHandler(name string) mcp.ToolHandler {
@@ -287,7 +307,12 @@ func (r *Registry) handleSearchEntity(ctx context.Context, req *mcp.CallToolRequ
 	page := intArg(args, "page", 1)
 	fuzzy := boolArg(args, "fuzzy", true)
 
-	records, pagination, searchErr := r.executeSearch(ctx, query, limit, page, fuzzy)
+	records, pagination, searchErr := r.executeSearch(ctx, searchRequest{
+		query: query,
+		limit: limit,
+		page:  page,
+		fuzzy: fuzzy,
+	})
 	if searchErr != nil {
 		return classifyError("Search failed", searchErr)
 	}
@@ -295,12 +320,21 @@ func (r *Registry) handleSearchEntity(ctx context.Context, req *mcp.CallToolRequ
 	return jsonResult(buildSearchResponse(records, pagination))
 }
 
+// searchRequest groups parameters for executeSearch. Keeping them together
+// avoids the long argument list that codescene flagged.
+type searchRequest struct {
+	query string
+	limit int
+	page  int
+	fuzzy bool
+}
+
 // executeSearch picks the search backend based on the fuzzy flag.
-func (r *Registry) executeSearch(ctx context.Context, query string, limit, page int, fuzzy bool) ([]gleif.LEIRecord, *gleif.Pagination, error) {
-	if fuzzy {
-		return r.client.FuzzySearch(ctx, query, limit, page)
+func (r *Registry) executeSearch(ctx context.Context, req searchRequest) ([]gleif.LEIRecord, *gleif.Pagination, error) {
+	if req.fuzzy {
+		return r.client.FuzzySearch(ctx, req.query, req.limit, req.page)
 	}
-	return r.client.SearchEntities(ctx, query, limit, page)
+	return r.client.SearchEntities(ctx, req.query, req.limit, req.page)
 }
 
 func buildSearchResponse(records []gleif.LEIRecord, pagination *gleif.Pagination) map[string]any {
