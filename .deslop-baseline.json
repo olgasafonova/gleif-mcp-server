@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-04-25T09:26:49Z",
+  "generated_at": "2026-05-17T09:09:19Z",
   "deslop_version": "2.1.0",
   "scores": {
-    "file_health": 70.0,
-    "test_coverage": 50.0,
+    "file_health": 95.0,
+    "test_coverage": 30.0,
     "secret_detection": 100.0,
     "todo_debt": 100.0,
     "dependency_health": 100.0,
     "structural_quality": 100.0,
-    "overall": 86.7
+    "overall": 87.5
   },
   "findings": [
     {
@@ -21,20 +21,20 @@
     {
       "detector": "file_health",
       "severity": "warning",
-      "key": "internal/gleif/client.go",
-      "summary": "internal/gleif/client.go (706 LOC)"
+      "key": "internal/gleif",
+      "summary": "internal/gleif/ has 16 source files (flat directory)"
     },
     {
       "detector": "file_health",
       "severity": "warning",
       "key": "internal/gleif/client_test.go",
-      "summary": "internal/gleif/client_test.go (646 LOC)"
+      "summary": "internal/gleif/client_test.go (657 LOC)"
     },
     {
       "detector": "file_health",
       "severity": "warning",
       "key": "tools/handlers.go",
-      "summary": "tools/handlers.go (590 LOC)"
+      "summary": "tools/handlers.go (643 LOC)"
     },
     {
       "detector": "test_coverage",
@@ -45,14 +45,38 @@
     {
       "detector": "test_coverage",
       "severity": "warning",
+      "key": "internal/gleif/client_lookup.go",
+      "summary": "internal/gleif/client_lookup.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "internal/gleif/client_relationships.go",
+      "summary": "internal/gleif/client_relationships.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "internal/gleif/client_search.go",
+      "summary": "internal/gleif/client_search.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "internal/gleif/client_validate.go",
+      "summary": "internal/gleif/client_validate.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
       "key": "internal/gleif/errors.go",
       "summary": "internal/gleif/errors.go has no test file"
     },
     {
       "detector": "test_coverage",
       "severity": "warning",
-      "key": "internal/gleif/types.go",
-      "summary": "internal/gleif/types.go has no test file"
+      "key": "internal/gleif/identifiers.go",
+      "summary": "internal/gleif/identifiers.go has no test file"
     }
   ]
 }
