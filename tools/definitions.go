@@ -127,7 +127,7 @@ FAILS WHEN: no results found (try autocomplete for name suggestions, or check sp
 		Category:    "search",
 		ReadOnly:    true,
 		Idempotent:  true,
-		Description: `List entities registered in a specific country. USE WHEN: "companies in Germany", "LEIs from US", "entities in country X". Pass ISO 2-letter code (US, GB, DE). Returns entity list with LEI, legal name, and status for each. Paginated. FAILS WHEN: country code is not a 2-letter ISO 3166-1 alpha-2 code (use "US" not "USA", "GB" not "UK").`,
+		Description: `List entities registered in a specific country. USE WHEN: "companies in Germany", "LEIs from US", "entities in country X". Pass ISO 2-letter code (US, GB, DE). Returns entity list with LEI, legal name, and status for each. Returns up to 'limit' results (max 100); this tool does not page, so raise 'limit' to get more rather than requesting a next page. FAILS WHEN: country code is not a 2-letter ISO 3166-1 alpha-2 code (use "US" not "USA", "GB" not "UK").`,
 		Parameters: []ParameterSpec{
 			{Name: "country", Type: "string", Description: "2-letter ISO country code", Required: true, Pattern: `^[A-Z]{2}$`, MinLength: intPtr(2), MaxLength: intPtr(2), Example: "US"},
 			{Name: "limit", Type: "integer", Description: "Max results (default 20)", Required: false, Minimum: floatPtr(1), Maximum: floatPtr(100), Default: 20},
