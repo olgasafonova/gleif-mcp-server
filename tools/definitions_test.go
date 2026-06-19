@@ -97,44 +97,6 @@ func TestToolDescriptionsHaveUseWhen(t *testing.T) {
 	}
 }
 
-func TestParametersHaveRequiredFields(t *testing.T) {
-	for _, tool := range AllTools {
-		for j, param := range tool.Parameters {
-			t.Run(tool.Name+"/"+param.Name, func(t *testing.T) {
-				if param.Name == "" {
-					t.Errorf("tool %q param[%d]: Name is required", tool.Name, j)
-				}
-				if param.Type == "" {
-					t.Errorf("tool %q param %q: Type is required", tool.Name, param.Name)
-				}
-				if param.Description == "" {
-					t.Errorf("tool %q param %q: Description is required", tool.Name, param.Name)
-				}
-			})
-		}
-	}
-}
-
-func TestParameterTypesValid(t *testing.T) {
-	validTypes := map[string]bool{
-		"string":  true,
-		"integer": true,
-		"boolean": true,
-		"number":  true,
-		"array":   true,
-	}
-
-	for _, tool := range AllTools {
-		for _, param := range tool.Parameters {
-			t.Run(tool.Name+"/"+param.Name, func(t *testing.T) {
-				if !validTypes[param.Type] {
-					t.Errorf("tool %q param %q has invalid type %q", tool.Name, param.Name, param.Type)
-				}
-			})
-		}
-	}
-}
-
 func TestGetToolByNameDefinitions(t *testing.T) {
 	tool := GetToolByName("lei_lookup")
 	if tool == nil {

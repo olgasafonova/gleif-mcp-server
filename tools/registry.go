@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -14,8 +16,12 @@ import (
 type Registry struct {
 	client   *gleif.Client
 	logger   *slog.Logger
-	handlers map[string]mcp.ToolHandler
+	handlers map[string]registrationFunc
 }
+
+// registrationFunc registers one tool with the server. It erases the per-tool
+// Args/Result type parameters so all tools can live in a single dispatch map.
+type registrationFunc func(server *mcp.Server, spec ToolSpec)
 
 // NewRegistry creates a new tool registry.
 func NewRegistry(client *gleif.Client, logger *slog.Logger) *Registry {
@@ -27,147 +33,112 @@ func NewRegistry(client *gleif.Client, logger *slog.Logger) *Registry {
 	return r
 }
 
-// buildHandlerMap returns the name → handler dispatch table. A map collapses
-// the prior 12-arm switch (cc=13) into a constant-complexity lookup.
-func (r *Registry) buildHandlerMap() map[string]mcp.ToolHandler {
-	return map[string]mcp.ToolHandler{
-		"lei_lookup":               r.handleLEILookup,
-		"validate_lei":             r.handleValidateLEI,
-		"batch_lei_lookup":         r.handleBatchLEILookup,
-		"search_entity":            r.handleSearchEntity,
-		"search_by_bic":            r.handleSearchByBIC,
-		"search_by_isin":           r.handleSearchByISIN,
-		"search_by_country":        r.handleSearchByCountry,
-		"get_relationships":        r.handleGetRelationships,
-		"autocomplete":             r.handleAutocomplete,
-		"get_lei_issuer":           r.handleGetLEIIssuer,
-		"list_lei_issuers":         r.handleListLEIIssuers,
-		"get_reporting_exceptions": r.handleGetReportingExceptions,
+// buildHandlerMap returns the name → registration dispatch table. makeHandler
+// captures each typed handler method and adapts it to the uniform
+// registrationFunc signature.
+func (r *Registry) buildHandlerMap() map[string]registrationFunc {
+	return map[string]registrationFunc{
+		"lei_lookup":               makeHandler(r, r.handleLEILookup),
+		"validate_lei":             makeHandler(r, r.handleValidateLEI),
+		"batch_lei_lookup":         makeHandler(r, r.handleBatchLEILookup),
+		"search_entity":            makeHandler(r, r.handleSearchEntity),
+		"search_by_bic":            makeHandler(r, r.handleSearchByBIC),
+		"search_by_isin":           makeHandler(r, r.handleSearchByISIN),
+		"search_by_country":        makeHandler(r, r.handleSearchByCountry),
+		"get_relationships":        makeHandler(r, r.handleGetRelationships),
+		"autocomplete":             makeHandler(r, r.handleAutocomplete),
+		"get_lei_issuer":           makeHandler(r, r.handleGetLEIIssuer),
+		"list_lei_issuers":         makeHandler(r, r.handleListLEIIssuers),
+		"get_reporting_exceptions": makeHandler(r, r.handleGetReportingExceptions),
 	}
 }
 
 // RegisterAll registers all tools with the MCP server.
 func (r *Registry) RegisterAll(server *mcp.Server) {
 	for _, spec := range AllTools {
-		r.registerTool(server, spec)
+		register, ok := r.handlers[spec.Name]
+		if !ok {
+			r.logger.Warn("No handler registered for tool, skipping", "tool", spec.Name)
+			continue
+		}
+		register(server, spec)
 	}
 	r.logger.Debug("Registered MCP tools", "count", len(AllTools))
 }
 
-func (r *Registry) registerTool(server *mcp.Server, spec ToolSpec) {
-	inputSchema := buildInputSchema(spec.Parameters)
-	handler := r.lookupHandler(spec.Name)
+// makeHandler adapts a typed handler method into a uniform registrationFunc.
+// This is the only place per-tool type parameters are needed.
+func makeHandler[Args, Result any](r *Registry, method func(context.Context, Args) (Result, error)) registrationFunc {
+	return func(server *mcp.Server, spec ToolSpec) {
+		registerTyped(r, server, spec, method)
+	}
+}
 
-	server.AddTool(&mcp.Tool{
+// registerTyped wires one typed handler into the server via the generic
+// mcp.AddTool. The Args struct drives the input schema; the Result struct drives
+// the output schema and structuredContent (both auto-derived by the go-sdk). The
+// named returns plus the deferred recoverPanic are load-bearing for HG-1: a
+// panic must surface as a structured error, not as a silent (nil, zero, nil).
+func registerTyped[Args, Result any](
+	r *Registry,
+	server *mcp.Server,
+	spec ToolSpec,
+	method func(context.Context, Args) (Result, error),
+) {
+	tool := buildTool(spec)
+	mcp.AddTool(server, tool, func(ctx context.Context, _ *mcp.CallToolRequest, args Args) (res *mcp.CallToolResult, out Result, err error) {
+		defer r.recoverPanic(spec.Name, &err)
+
+		result, methodErr := method(ctx, args)
+		if methodErr != nil {
+			var zero Result
+			return nil, zero, fmt.Errorf("%s: %w", spec.Name, methodErr)
+		}
+		return nil, result, nil
+	})
+}
+
+// buildTool constructs the tool metadata. InputSchema is left nil so the go-sdk
+// infers it from the handler's Args type.
+func buildTool(spec ToolSpec) *mcp.Tool {
+	return &mcp.Tool{
 		Name:        spec.Name,
 		Description: spec.Description,
-		InputSchema: inputSchema,
 		Annotations: &mcp.ToolAnnotations{
 			Title:          spec.Title,
 			ReadOnlyHint:   spec.ReadOnly,
 			IdempotentHint: spec.Idempotent,
 		},
-	}, r.wrapHandler(spec.Name, handler))
-}
-
-// buildInputSchema converts ParameterSpec slice to MCP input schema map.
-// Extracted from registerTool to drop its cyclomatic complexity below the
-// Go threshold; the per-property field copying is contained here.
-func buildInputSchema(params []ParameterSpec) map[string]any {
-	properties := make(map[string]any, len(params))
-	required := []string{}
-
-	for _, p := range params {
-		properties[p.Name] = buildPropertySchema(p)
-		if p.Required {
-			required = append(required, p.Name)
-		}
-	}
-
-	schema := map[string]any{
-		"type":       "object",
-		"properties": properties,
-	}
-	if len(required) > 0 {
-		schema["required"] = required
-	}
-	return schema
-}
-
-// buildPropertySchema renders one ParameterSpec as a JSON-Schema property map.
-func buildPropertySchema(p ParameterSpec) map[string]any {
-	prop := map[string]any{
-		"type":        p.Type,
-		"description": p.Description,
-	}
-	addLengthBounds(prop, p)
-	addNumericBounds(prop, p)
-	addEnumAndExample(prop, p)
-	addDefaultAndPattern(prop, p)
-	return prop
-}
-
-// addLengthBounds copies MinLength / MaxLength into the property map when set.
-func addLengthBounds(prop map[string]any, p ParameterSpec) {
-	if p.MinLength != nil {
-		prop["minLength"] = *p.MinLength
-	}
-	if p.MaxLength != nil {
-		prop["maxLength"] = *p.MaxLength
 	}
 }
 
-// addNumericBounds copies Minimum / Maximum into the property map when set.
-func addNumericBounds(prop map[string]any, p ParameterSpec) {
-	if p.Minimum != nil {
-		prop["minimum"] = *p.Minimum
+// recoverPanic converts a recovered panic into a structured tool error with a
+// correlation ID (HG-1). The panic value and stack are logged server-side only;
+// the MCP caller sees just the tool name and correlation ID, never the panic
+// value. Writing through errPtr is what turns the panic into an error rather
+// than a silent empty success.
+func (r *Registry) recoverPanic(toolName string, errPtr *error) {
+	rec := recover()
+	if rec == nil {
+		return
 	}
-	if p.Maximum != nil {
-		prop["maximum"] = *p.Maximum
-	}
-}
-
-// addEnumAndExample copies enum and example values into the property map.
-func addEnumAndExample(prop map[string]any, p ParameterSpec) {
-	if len(p.Enum) > 0 {
-		prop["enum"] = p.Enum
-	}
-	if p.Example != nil {
-		prop["examples"] = []any{p.Example}
-	}
-}
-
-// addDefaultAndPattern copies Default and Pattern into the property map.
-func addDefaultAndPattern(prop map[string]any, p ParameterSpec) {
-	if p.Default != nil {
-		prop["default"] = p.Default
-	}
-	if p.Pattern != "" {
-		prop["pattern"] = p.Pattern
+	corrID := newCorrelationID()
+	r.logger.Error("Panic recovered in tool handler",
+		"tool", toolName,
+		"correlation_id", corrID,
+		"panic", rec,
+		"stack", string(debug.Stack()))
+	if errPtr != nil {
+		*errPtr = fmt.Errorf("%s: internal error (correlation_id=%s)", toolName, corrID)
 	}
 }
 
-func (r *Registry) lookupHandler(name string) mcp.ToolHandler {
-	if h, ok := r.handlers[name]; ok {
-		return h
+// newCorrelationID returns a short random hex ID for correlating a sanitized
+// caller-facing error with the full server-side log entry.
+func newCorrelationID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "unknown"
 	}
-	return func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return errorResult(fmt.Sprintf("Unknown tool: %s", name))
-	}
-}
-
-// wrapHandler adds panic recovery around a tool handler.
-func (r *Registry) wrapHandler(toolName string, handler mcp.ToolHandler) mcp.ToolHandler {
-	return func(ctx context.Context, req *mcp.CallToolRequest) (result *mcp.CallToolResult, err error) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				r.logger.Error("Panic recovered in tool handler",
-					"tool", toolName,
-					"panic", rec,
-					"stack", string(debug.Stack()))
-				result, err = errorResult(fmt.Sprintf("Internal error in %s", toolName))
-			}
-		}()
-		return handler(ctx, req)
-	}
+	return hex.EncodeToString(b)
 }

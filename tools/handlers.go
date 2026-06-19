@@ -2,101 +2,74 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/olgasafonova/gleif-mcp-server/internal/gleif"
 )
 
 // Handler implementations
 //
-// Single-LEI lookups (lei_lookup, get_relationships, get_reporting_exceptions)
-// share a parse-and-call shape; the lookups that don't need extra args go
-// through handleSimpleLEILookup. Multi-arg handlers below run the parse step
-// inline because the extra arguments diverge.
+// Each handler is a typed method `func(ctx, Args) (Result, error)` registered
+// via the generic mcp.AddTool path (see registry.go). The go-sdk validates the
+// arguments against the Args-derived input schema before the handler runs, so
+// required-field presence is enforced upstream; handlers validate value-level
+// constraints (format, range) via the gleif.Parse* validators. On error the
+// handler returns a plain error, which registry.go wraps with the tool name
+// and the go-sdk surfaces as a structured tool error. On success it returns the
+// typed Result, which the go-sdk emits as structuredContent + a JSON text block.
 
-func (r *Registry) handleLEILookup(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return r.handleSimpleLEILookup(ctx, req, "Failed to fetch LEI", func(ctx context.Context, lei gleif.LEI) (any, error) {
-		return r.client.GetLEI(ctx, lei)
-	})
+// --- Clean tools: return existing client types directly ---
+
+func (r *Registry) handleLEILookup(ctx context.Context, args LEILookupArgs) (*gleif.LEIRecord, error) {
+	lei, err := gleif.ParseLEI(args.LEI)
+	if err != nil {
+		return nil, fmt.Errorf("invalid LEI: %w", err)
+	}
+	record, err := r.client.GetLEI(ctx, lei)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch LEI: %w", err)
+	}
+	return record, nil
 }
 
-func (r *Registry) handleGetReportingExceptions(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return r.handleSimpleLEILookup(ctx, req, "Failed to fetch reporting exceptions", func(ctx context.Context, lei gleif.LEI) (any, error) {
-		exceptions, err := r.client.GetReportingExceptions(ctx, lei)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{
-			"lei":        string(lei),
-			"count":      len(exceptions),
-			"exceptions": exceptions,
-		}, nil
-	})
+func (r *Registry) handleValidateLEI(ctx context.Context, args ValidateLEIArgs) (*gleif.ValidationResult, error) {
+	// ValidateLEI accepts raw input on purpose: the tool's job is to report
+	// format/check-digit failures as validation results, not errors.
+	result, err := r.client.ValidateLEI(ctx, args.LEI)
+	if err != nil {
+		return nil, fmt.Errorf("validation error: %w", err)
+	}
+	return result, nil
 }
 
-func (r *Registry) handleGetLEIIssuer(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, err := parseArguments(req)
+func (r *Registry) handleGetLEIIssuer(ctx context.Context, args GetLEIIssuerArgs) (*gleif.LEIIssuer, error) {
+	issuerID, err := gleif.ParseIssuerID(args.IssuerID)
 	if err != nil {
-		return errorResult(err.Error())
-	}
-	id, ok := args["issuer_id"].(string)
-	if !ok || id == "" {
-		return errorResult("issuer_id parameter is required")
-	}
-	issuerID, err := gleif.ParseIssuerID(id)
-	if err != nil {
-		return classifyError("Invalid issuer_id", err)
+		return nil, fmt.Errorf("invalid issuer_id: %w", err)
 	}
 	issuer, err := r.client.GetLEIIssuer(ctx, issuerID)
 	if err != nil {
-		return classifyError("Failed to fetch LEI issuer", err)
+		return nil, fmt.Errorf("failed to fetch LEI issuer: %w", err)
 	}
-	return jsonResult(issuer)
+	return issuer, nil
 }
 
-func (r *Registry) handleValidateLEI(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, err := parseArguments(req)
-	if err != nil {
-		return errorResult(err.Error())
-	}
-	lei, ok := args["lei"].(string)
-	if !ok || lei == "" {
-		return errorResult("lei parameter is required")
-	}
-	// ValidateLEI accepts raw input on purpose: the tool's job is to report
-	// format/check-digit failures back as validation results.
-	result, err := r.client.ValidateLEI(ctx, lei)
-	if err != nil {
-		return classifyError("Validation error", err)
-	}
-	return jsonResult(result)
-}
+// --- Tools with structured Result types ---
 
-func (r *Registry) handleBatchLEILookup(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, err := parseArguments(req)
+func (r *Registry) handleBatchLEILookup(ctx context.Context, args BatchLEIArgs) (BatchResult, error) {
+	leis, err := parseBatchLEIs(args.LEIs)
 	if err != nil {
-		return errorResult(err.Error())
+		return BatchResult{}, fmt.Errorf("invalid LEI in batch: %w", err)
 	}
-	leisStr, ok := args["leis"].(string)
-	if !ok || leisStr == "" {
-		return errorResult("leis parameter is required")
+	if len(leis) == 0 {
+		return BatchResult{}, fmt.Errorf("no valid LEIs provided; pass one or more comma-separated 20-character LEI codes")
 	}
-
-	leis, parseErr := parseBatchLEIs(leisStr)
-	if parseErr != nil {
-		return classifyError("Invalid LEI in batch", parseErr)
-	}
-
 	records, err := r.client.GetBatchLEI(ctx, leis)
 	if err != nil {
-		return classifyError("Batch lookup failed", err)
+		return BatchResult{}, fmt.Errorf("batch lookup failed: %w", err)
 	}
-
-	return jsonResult(buildBatchResponse(leis, records))
+	return buildBatchResult(leis, records), nil
 }
 
 // parseBatchLEIs splits the comma-separated input and parses each entry.
@@ -118,9 +91,9 @@ func parseBatchLEIs(raw string) ([]gleif.LEI, error) {
 	return leis, nil
 }
 
-// buildBatchResponse shapes the batch results, including the not-found set.
-func buildBatchResponse(requested []gleif.LEI, records []gleif.LEIRecord) map[string]any {
-	results := make([]map[string]any, len(records))
+// buildBatchResult shapes the batch results, including the not-found set.
+func buildBatchResult(requested []gleif.LEI, records []gleif.LEIRecord) BatchResult {
+	results := make([]SimpleRecord, len(records))
 	foundLEIs := make(map[string]bool, len(records))
 	for i, rec := range records {
 		results[i] = simplifyRecord(rec)
@@ -134,42 +107,43 @@ func buildBatchResponse(requested []gleif.LEI, records []gleif.LEIRecord) map[st
 		}
 	}
 
-	response := map[string]any{
-		"requested": len(requested),
-		"found":     len(results),
-		"results":   results,
+	return BatchResult{
+		Requested: len(requested),
+		Found:     len(results),
+		Results:   results,
+		NotFound:  notFound,
 	}
-	if len(notFound) > 0 {
-		response["notFound"] = notFound
-	}
-	return response
 }
 
-func (r *Registry) handleSearchEntity(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, err := parseArguments(req)
-	if err != nil {
-		return errorResult(err.Error())
-	}
-	query, ok := args["query"].(string)
-	if !ok || query == "" {
-		return errorResult("query parameter is required")
+func (r *Registry) handleSearchEntity(ctx context.Context, args SearchEntityArgs) (SearchEntityResult, error) {
+	if args.Query == "" {
+		return SearchEntityResult{}, fmt.Errorf("query parameter is required")
 	}
 
-	limit := intArg(args, "limit", 20)
-	page := intArg(args, "page", 1)
-	fuzzy := boolArg(args, "fuzzy", true)
+	limit := args.Limit
+	if limit == 0 {
+		limit = 20
+	}
+	page := args.Page
+	if page == 0 {
+		page = 1
+	}
+	fuzzy := true
+	if args.Fuzzy != nil {
+		fuzzy = *args.Fuzzy
+	}
 
 	records, pagination, searchErr := r.executeSearch(ctx, searchRequest{
-		query: query,
+		query: args.Query,
 		limit: limit,
 		page:  page,
 		fuzzy: fuzzy,
 	})
 	if searchErr != nil {
-		return classifyError("Search failed", searchErr)
+		return SearchEntityResult{}, fmt.Errorf("search failed: %w", searchErr)
 	}
 
-	return jsonResult(buildSearchResponse(records, pagination))
+	return buildSearchResult(records, pagination), nil
 }
 
 // searchRequest groups parameters for executeSearch. Keeping them together
@@ -189,291 +163,181 @@ func (r *Registry) executeSearch(ctx context.Context, req searchRequest) ([]glei
 	return r.client.SearchEntities(ctx, req.query, req.limit, req.page)
 }
 
-func buildSearchResponse(records []gleif.LEIRecord, pagination *gleif.Pagination) map[string]any {
-	results := make([]map[string]any, len(records))
+func buildSearchResult(records []gleif.LEIRecord, pagination *gleif.Pagination) SearchEntityResult {
+	results := make([]SimpleRecord, len(records))
 	for i, rec := range records {
 		results[i] = simplifyRecord(rec)
 	}
-	response := map[string]any{
-		"count":   len(results),
-		"results": results,
+	result := SearchEntityResult{
+		Count:   len(results),
+		Results: results,
 	}
 	if pagination != nil {
-		response["pagination"] = map[string]any{
-			"currentPage": pagination.CurrentPage,
-			"perPage":     pagination.PerPage,
-			"total":       pagination.Total,
-			"lastPage":    pagination.LastPage,
+		result.Pagination = &PageInfo{
+			CurrentPage: pagination.CurrentPage,
+			PerPage:     pagination.PerPage,
+			Total:       pagination.Total,
+			LastPage:    pagination.LastPage,
 		}
-		response["hasMore"] = pagination.CurrentPage < pagination.LastPage
+		hasMore := pagination.CurrentPage < pagination.LastPage
+		result.HasMore = &hasMore
 	}
-	return response
+	return result
 }
 
-func (r *Registry) handleSearchByBIC(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, err := parseArguments(req)
+func (r *Registry) handleSearchByBIC(ctx context.Context, args SearchByBICArgs) (IDSearchResult, error) {
+	bic, err := gleif.ParseBIC(args.BIC)
 	if err != nil {
-		return errorResult(err.Error())
-	}
-	raw, ok := args["bic"].(string)
-	if !ok || raw == "" {
-		return errorResult("bic parameter is required")
-	}
-	bic, err := gleif.ParseBIC(raw)
-	if err != nil {
-		return classifyError("Invalid BIC", err)
+		return IDSearchResult{}, fmt.Errorf("invalid BIC: %w", err)
 	}
 	records, err := r.client.SearchByBIC(ctx, bic)
 	if err != nil {
-		return classifyError("BIC search failed", err)
+		return IDSearchResult{}, fmt.Errorf("BIC search failed: %w", err)
 	}
-	return jsonResult(buildIDSearchResponse(records, "No LEI found for this BIC code"))
+	return buildIDSearchResult(records, "No LEI found for this BIC code"), nil
 }
 
-func (r *Registry) handleSearchByISIN(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, err := parseArguments(req)
+func (r *Registry) handleSearchByISIN(ctx context.Context, args SearchByISINArgs) (IDSearchResult, error) {
+	isin, err := gleif.ParseISIN(args.ISIN)
 	if err != nil {
-		return errorResult(err.Error())
-	}
-	raw, ok := args["isin"].(string)
-	if !ok || raw == "" {
-		return errorResult("isin parameter is required")
-	}
-	isin, err := gleif.ParseISIN(raw)
-	if err != nil {
-		return classifyError("Invalid ISIN", err)
+		return IDSearchResult{}, fmt.Errorf("invalid ISIN: %w", err)
 	}
 	records, err := r.client.SearchByISIN(ctx, isin)
 	if err != nil {
-		return classifyError("ISIN search failed", err)
+		return IDSearchResult{}, fmt.Errorf("ISIN search failed: %w", err)
 	}
-	return jsonResult(buildIDSearchResponse(records, "No issuer LEI found for this ISIN"))
+	return buildIDSearchResult(records, "No issuer LEI found for this ISIN"), nil
 }
 
-// buildIDSearchResponse shapes BIC/ISIN search results uniformly. Replaces
-// the duplicate found/empty branches that CodeScene flagged across both
-// handlers.
-func buildIDSearchResponse(records []gleif.LEIRecord, emptyMessage string) map[string]any {
+// buildIDSearchResult shapes BIC/ISIN search results uniformly. The empty case
+// returns a non-nil (empty) records slice plus a message; the found case omits
+// the message.
+func buildIDSearchResult(records []gleif.LEIRecord, emptyMessage string) IDSearchResult {
 	if len(records) == 0 {
-		return map[string]any{
-			"found":   false,
-			"count":   0,
-			"records": []any{},
-			"message": emptyMessage,
+		return IDSearchResult{
+			Found:   false,
+			Count:   0,
+			Records: []gleif.LEIRecord{},
+			Message: emptyMessage,
 		}
 	}
-	return map[string]any{
-		"found":   true,
-		"count":   len(records),
-		"records": records,
+	return IDSearchResult{
+		Found:   true,
+		Count:   len(records),
+		Records: records,
 	}
 }
 
-func (r *Registry) handleSearchByCountry(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, err := parseArguments(req)
+func (r *Registry) handleSearchByCountry(ctx context.Context, args SearchByCountryArgs) (CountrySearchResult, error) {
+	country, err := gleif.ParseCountry(args.Country)
 	if err != nil {
-		return errorResult(err.Error())
-	}
-	raw, ok := args["country"].(string)
-	if !ok || raw == "" {
-		return errorResult("country parameter is required")
-	}
-	country, err := gleif.ParseCountry(raw)
-	if err != nil {
-		return classifyError("Invalid country", err)
+		return CountrySearchResult{}, fmt.Errorf("invalid country: %w", err)
 	}
 
-	limit := intArg(args, "limit", 20)
+	limit := args.Limit
+	if limit == 0 {
+		limit = 20
+	}
 	records, err := r.client.SearchByCountry(ctx, country, limit)
 	if err != nil {
-		return classifyError("Country search failed", err)
+		return CountrySearchResult{}, fmt.Errorf("country search failed: %w", err)
 	}
 
-	results := make([]map[string]any, len(records))
+	results := make([]CountryRecord, len(records))
 	for i, rec := range records {
-		results[i] = map[string]any{
-			"lei":       rec.LEI,
-			"legalName": rec.Entity.LegalName.Name,
-			"city":      rec.Entity.LegalAddress.City,
-			"status":    rec.Entity.Status,
+		results[i] = CountryRecord{
+			LEI:       rec.LEI,
+			LegalName: rec.Entity.LegalName.Name,
+			City:      rec.Entity.LegalAddress.City,
+			Status:    rec.Entity.Status,
 		}
 	}
-	return jsonResult(map[string]any{
-		"country": string(country),
-		"count":   len(results),
-		"results": results,
-	})
+	return CountrySearchResult{
+		Country: string(country),
+		Count:   len(results),
+		Results: results,
+	}, nil
 }
 
-func (r *Registry) handleGetRelationships(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, err := parseArguments(req)
+func (r *Registry) handleGetRelationships(ctx context.Context, args GetRelationshipsArgs) (RelationshipsResult, error) {
+	lei, err := gleif.ParseLEI(args.LEI)
 	if err != nil {
-		return errorResult(err.Error())
-	}
-	raw, ok := args["lei"].(string)
-	if !ok || raw == "" {
-		return errorResult("lei parameter is required")
-	}
-	lei, err := gleif.ParseLEI(raw)
-	if err != nil {
-		return classifyError("Invalid LEI", err)
+		return RelationshipsResult{}, fmt.Errorf("invalid LEI: %w", err)
 	}
 
 	relType := "direct-parent"
-	if t, ok := args["type"].(string); ok && t != "" {
-		relType = t
+	if args.Type != "" {
+		relType = args.Type
 	}
 
 	relationships, err := r.client.GetRelationships(ctx, lei, relType)
 	if err != nil {
-		return classifyError("Relationship lookup failed", err)
+		return RelationshipsResult{}, fmt.Errorf("relationship lookup failed: %w", err)
 	}
 
-	return jsonResult(map[string]any{
-		"lei":           string(lei),
-		"type":          relType,
-		"relationships": relationships,
-	})
+	return RelationshipsResult{
+		LEI:           string(lei),
+		Type:          relType,
+		Relationships: relationships,
+	}, nil
 }
 
-func (r *Registry) handleAutocomplete(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, err := parseArguments(req)
-	if err != nil {
-		return errorResult(err.Error())
-	}
-	prefix, ok := args["prefix"].(string)
-	if !ok || prefix == "" {
-		return errorResult("prefix parameter is required")
+func (r *Registry) handleAutocomplete(ctx context.Context, args AutocompleteArgs) (AutocompleteToolResult, error) {
+	if len(args.Prefix) < 2 {
+		return AutocompleteToolResult{}, fmt.Errorf("prefix must be at least 2 characters")
 	}
 
-	limit := intArg(args, "limit", 10)
-	suggestions, err := r.client.Autocomplete(ctx, prefix, limit)
+	limit := args.Limit
+	if limit == 0 {
+		limit = 10
+	}
+	suggestions, err := r.client.Autocomplete(ctx, args.Prefix, limit)
 	if err != nil {
-		return classifyError("Autocomplete failed", err)
+		return AutocompleteToolResult{}, fmt.Errorf("autocomplete failed: %w", err)
 	}
 
-	return jsonResult(map[string]any{
-		"prefix":      prefix,
-		"suggestions": suggestions,
-	})
+	return AutocompleteToolResult{
+		Prefix:      args.Prefix,
+		Suggestions: suggestions,
+	}, nil
 }
 
-func (r *Registry) handleListLEIIssuers(ctx context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (r *Registry) handleListLEIIssuers(ctx context.Context, _ ListLEIIssuersArgs) (IssuersResult, error) {
 	issuers, err := r.client.ListLEIIssuers(ctx)
 	if err != nil {
-		return classifyError("Failed to list LEI issuers", err)
+		return IssuersResult{}, fmt.Errorf("failed to list LEI issuers: %w", err)
 	}
-	return jsonResult(map[string]any{
-		"count":   len(issuers),
-		"issuers": issuers,
-	})
+	return IssuersResult{
+		Count:   len(issuers),
+		Issuers: issuers,
+	}, nil
 }
 
-// Helpers
-
-// handleSimpleLEILookup is the shared shape for handlers whose only argument
-// is an LEI: parse args, parse the LEI, call the client, format the response.
-// Replaces the duplicate prologue across handleLEILookup, handleGetReporting-
-// Exceptions (and previously handleGetRelationships before it grew an extra arg).
-func (r *Registry) handleSimpleLEILookup(
-	ctx context.Context,
-	req *mcp.CallToolRequest,
-	errorPrefix string,
-	call func(context.Context, gleif.LEI) (any, error),
-) (*mcp.CallToolResult, error) {
-	args, err := parseArguments(req)
+func (r *Registry) handleGetReportingExceptions(ctx context.Context, args GetReportingExceptionsArgs) (ReportingExceptionsResult, error) {
+	lei, err := gleif.ParseLEI(args.LEI)
 	if err != nil {
-		return errorResult(err.Error())
+		return ReportingExceptionsResult{}, fmt.Errorf("invalid LEI: %w", err)
 	}
-	raw, ok := args["lei"].(string)
-	if !ok || raw == "" {
-		return errorResult("lei parameter is required")
-	}
-	lei, err := gleif.ParseLEI(raw)
+	exceptions, err := r.client.GetReportingExceptions(ctx, lei)
 	if err != nil {
-		return classifyError("Invalid LEI", err)
+		return ReportingExceptionsResult{}, fmt.Errorf("failed to fetch reporting exceptions: %w", err)
 	}
-	result, err := call(ctx, lei)
-	if err != nil {
-		return classifyError(errorPrefix, err)
-	}
-	return jsonResult(result)
+	return ReportingExceptionsResult{
+		LEI:        string(lei),
+		Count:      len(exceptions),
+		Exceptions: exceptions,
+	}, nil
 }
 
 // simplifyRecord builds the trimmed-down representation used by batch and
 // search responses. Centralized to keep the field list in one place.
-func simplifyRecord(rec gleif.LEIRecord) map[string]any {
-	return map[string]any{
-		"lei":       rec.LEI,
-		"legalName": rec.Entity.LegalName.Name,
-		"country":   rec.Entity.LegalAddress.Country,
-		"city":      rec.Entity.LegalAddress.City,
-		"status":    rec.Entity.Status,
-		"regStatus": rec.Registration.Status,
+func simplifyRecord(rec gleif.LEIRecord) SimpleRecord {
+	return SimpleRecord{
+		LEI:       rec.LEI,
+		LegalName: rec.Entity.LegalName.Name,
+		Country:   rec.Entity.LegalAddress.Country,
+		City:      rec.Entity.LegalAddress.City,
+		Status:    rec.Entity.Status,
+		RegStatus: rec.Registration.Status,
 	}
-}
-
-// intArg pulls an int argument out of MCP's float64-typed JSON, falling back
-// to the supplied default if missing or wrong-typed.
-func intArg(args map[string]any, name string, def int) int {
-	if v, ok := args[name].(float64); ok {
-		return int(v)
-	}
-	return def
-}
-
-// boolArg pulls a bool argument with a fallback default.
-func boolArg(args map[string]any, name string, def bool) bool {
-	if v, ok := args[name].(bool); ok {
-		return v
-	}
-	return def
-}
-
-func parseArguments(req *mcp.CallToolRequest) (map[string]any, error) {
-	if len(req.Params.Arguments) == 0 {
-		return make(map[string]any), nil
-	}
-	var args map[string]any
-	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-		return nil, fmt.Errorf("failed to parse arguments: %w", err)
-	}
-	return args, nil
-}
-
-func jsonResult(data any) (*mcp.CallToolResult, error) {
-	jsonBytes, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal result: %w", err)
-	}
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: string(jsonBytes)}},
-	}, nil
-}
-
-func errorResult(message string) (*mcp.CallToolResult, error) {
-	return errorResultWithCode("error", message, false)
-}
-
-func errorResultWithCode(code, message string, retryable bool) (*mcp.CallToolResult, error) {
-	errJSON, _ := json.MarshalIndent(map[string]any{
-		"error":     true,
-		"code":      code,
-		"message":   message,
-		"retryable": retryable,
-	}, "", "  ")
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: string(errJSON)}},
-		IsError: true,
-	}, nil
-}
-
-// classifyError inspects an error and returns a structured error result with
-// the appropriate code and retryable flag from the underlying APIError, if any.
-func classifyError(prefix string, err error) (*mcp.CallToolResult, error) {
-	var apiErr *gleif.APIError
-	if errors.As(err, &apiErr) {
-		return errorResultWithCode(apiErr.Code, fmt.Sprintf("%s: %s", prefix, apiErr.Message), apiErr.Retryable)
-	}
-	return errorResultWithCode("error", fmt.Sprintf("%s: %v", prefix, err), false)
 }
