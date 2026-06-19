@@ -4,15 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/olgasafonova/gleif-mcp-server/internal/gleif"
 )
 
 // Tests for relationship, issuer, and reporting-exception handlers. Shared
-// test helpers (newTestServer, newTestRegistry, makeRequest, getResultText)
-// live in handlers_test.go in the same package.
+// test helpers (newTestServer, newTestRegistry) live in handlers_test.go in the
+// same package.
 
 // TestHandleGetRelationships tests the get_relationships handler.
 func TestHandleGetRelationships(t *testing.T) {
@@ -20,7 +19,7 @@ func TestHandleGetRelationships(t *testing.T) {
 		ts := newTestServer()
 		defer ts.Close()
 
-		ts.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		ts.mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 			resp := struct {
 				Data []any `json:"data"`
 			}{Data: []any{}}
@@ -29,40 +28,28 @@ func TestHandleGetRelationships(t *testing.T) {
 		})
 
 		registry := newTestRegistry(ts.URL())
-		req := makeRequest(map[string]any{"lei": "HWUPKR0MPOU8FGXBT394"})
-
-		result, err := registry.handleGetRelationships(context.Background(), req)
+		result, err := registry.handleGetRelationships(context.Background(), GetRelationshipsArgs{LEI: "HWUPKR0MPOU8FGXBT394"})
 		if err != nil {
 			t.Fatalf("handleGetRelationships returned error: %v", err)
 		}
-		if result.IsError {
-			t.Fatalf("handleGetRelationships returned error result: %s", getResultText(result))
+		if result.Type != "direct-parent" {
+			t.Errorf("expected default type 'direct-parent', got %q", result.Type)
 		}
 	})
 
 	t.Run("invalid lei format", func(t *testing.T) {
 		registry := newTestRegistry("http://unused")
-		req := makeRequest(map[string]any{"lei": "INVALID"})
-
-		result, err := registry.handleGetRelationships(context.Background(), req)
-		if err != nil {
-			t.Fatalf("handleGetRelationships returned error: %v", err)
-		}
-		if !result.IsError {
-			t.Error("Expected error result for invalid lei format")
+		_, err := registry.handleGetRelationships(context.Background(), GetRelationshipsArgs{LEI: "INVALID"})
+		if err == nil {
+			t.Error("Expected error for invalid lei format")
 		}
 	})
 
-	t.Run("missing lei parameter", func(t *testing.T) {
+	t.Run("empty lei parameter", func(t *testing.T) {
 		registry := newTestRegistry("http://unused")
-		req := makeRequest(map[string]any{})
-
-		result, err := registry.handleGetRelationships(context.Background(), req)
-		if err != nil {
-			t.Fatalf("handleGetRelationships returned error: %v", err)
-		}
-		if !result.IsError {
-			t.Error("Expected error result for missing lei parameter")
+		_, err := registry.handleGetRelationships(context.Background(), GetRelationshipsArgs{LEI: ""})
+		if err == nil {
+			t.Error("Expected error for empty lei parameter")
 		}
 	})
 }
@@ -73,7 +60,7 @@ func TestHandleGetLEIIssuer(t *testing.T) {
 		ts := newTestServer()
 		defer ts.Close()
 
-		ts.mux.HandleFunc("/lei-issuers/", func(w http.ResponseWriter, r *http.Request) {
+		ts.mux.HandleFunc("/lei-issuers/", func(w http.ResponseWriter, _ *http.Request) {
 			resp := gleif.SingleResponse[gleif.LEIIssuer]{
 				Data: gleif.DataItem[gleif.LEIIssuer]{
 					ID:   "EVK05KS7XY1DEII3R011",
@@ -90,32 +77,20 @@ func TestHandleGetLEIIssuer(t *testing.T) {
 		})
 
 		registry := newTestRegistry(ts.URL())
-		req := makeRequest(map[string]any{"issuer_id": "EVK05KS7XY1DEII3R011"})
-
-		result, err := registry.handleGetLEIIssuer(context.Background(), req)
+		issuer, err := registry.handleGetLEIIssuer(context.Background(), GetLEIIssuerArgs{IssuerID: "EVK05KS7XY1DEII3R011"})
 		if err != nil {
 			t.Fatalf("handleGetLEIIssuer returned error: %v", err)
 		}
-		if result.IsError {
-			t.Fatalf("handleGetLEIIssuer returned error result: %s", getResultText(result))
-		}
-
-		text := getResultText(result)
-		if !strings.Contains(text, "WM Datenservice") {
-			t.Errorf("Expected result to contain 'WM Datenservice', got: %s", text)
+		if issuer == nil || issuer.Name != "WM Datenservice" {
+			t.Errorf("Expected issuer 'WM Datenservice', got: %+v", issuer)
 		}
 	})
 
-	t.Run("missing issuer_id parameter", func(t *testing.T) {
+	t.Run("empty issuer_id parameter", func(t *testing.T) {
 		registry := newTestRegistry("http://unused")
-		req := makeRequest(map[string]any{})
-
-		result, err := registry.handleGetLEIIssuer(context.Background(), req)
-		if err != nil {
-			t.Fatalf("handleGetLEIIssuer returned error: %v", err)
-		}
-		if !result.IsError {
-			t.Error("Expected error result for missing issuer_id parameter")
+		_, err := registry.handleGetLEIIssuer(context.Background(), GetLEIIssuerArgs{IssuerID: ""})
+		if err == nil {
+			t.Error("Expected error for empty issuer_id parameter")
 		}
 	})
 }
@@ -126,7 +101,7 @@ func TestHandleListLEIIssuers(t *testing.T) {
 		ts := newTestServer()
 		defer ts.Close()
 
-		ts.mux.HandleFunc("/lei-issuers", func(w http.ResponseWriter, r *http.Request) {
+		ts.mux.HandleFunc("/lei-issuers", func(w http.ResponseWriter, _ *http.Request) {
 			resp := gleif.APIResponse[gleif.LEIIssuer]{
 				Data: []gleif.DataItem[gleif.LEIIssuer]{
 					{
@@ -144,19 +119,12 @@ func TestHandleListLEIIssuers(t *testing.T) {
 		})
 
 		registry := newTestRegistry(ts.URL())
-		req := makeRequest(map[string]any{})
-
-		result, err := registry.handleListLEIIssuers(context.Background(), req)
+		result, err := registry.handleListLEIIssuers(context.Background(), ListLEIIssuersArgs{})
 		if err != nil {
 			t.Fatalf("handleListLEIIssuers returned error: %v", err)
 		}
-		if result.IsError {
-			t.Fatalf("handleListLEIIssuers returned error result: %s", getResultText(result))
-		}
-
-		text := getResultText(result)
-		if !strings.Contains(text, `"count": 1`) {
-			t.Errorf("Expected count=1 in result, got: %s", text)
+		if result.Count != 1 {
+			t.Errorf("Expected count=1, got %d", result.Count)
 		}
 	})
 }
@@ -167,7 +135,7 @@ func TestHandleGetReportingExceptions(t *testing.T) {
 		ts := newTestServer()
 		defer ts.Close()
 
-		ts.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		ts.mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 			resp := gleif.APIResponse[gleif.ReportingException]{
 				Data: []gleif.DataItem[gleif.ReportingException]{},
 			}
@@ -176,40 +144,28 @@ func TestHandleGetReportingExceptions(t *testing.T) {
 		})
 
 		registry := newTestRegistry(ts.URL())
-		req := makeRequest(map[string]any{"lei": "HWUPKR0MPOU8FGXBT394"})
-
-		result, err := registry.handleGetReportingExceptions(context.Background(), req)
+		result, err := registry.handleGetReportingExceptions(context.Background(), GetReportingExceptionsArgs{LEI: "HWUPKR0MPOU8FGXBT394"})
 		if err != nil {
 			t.Fatalf("handleGetReportingExceptions returned error: %v", err)
 		}
-		if result.IsError {
-			t.Fatalf("handleGetReportingExceptions returned error result: %s", getResultText(result))
+		if result.LEI != "HWUPKR0MPOU8FGXBT394" {
+			t.Errorf("Expected lei echoed back, got %q", result.LEI)
 		}
 	})
 
 	t.Run("invalid lei format", func(t *testing.T) {
 		registry := newTestRegistry("http://unused")
-		req := makeRequest(map[string]any{"lei": "INVALID"})
-
-		result, err := registry.handleGetReportingExceptions(context.Background(), req)
-		if err != nil {
-			t.Fatalf("handleGetReportingExceptions returned error: %v", err)
-		}
-		if !result.IsError {
-			t.Error("Expected error result for invalid lei format")
+		_, err := registry.handleGetReportingExceptions(context.Background(), GetReportingExceptionsArgs{LEI: "INVALID"})
+		if err == nil {
+			t.Error("Expected error for invalid lei format")
 		}
 	})
 
-	t.Run("missing lei parameter", func(t *testing.T) {
+	t.Run("empty lei parameter", func(t *testing.T) {
 		registry := newTestRegistry("http://unused")
-		req := makeRequest(map[string]any{})
-
-		result, err := registry.handleGetReportingExceptions(context.Background(), req)
-		if err != nil {
-			t.Fatalf("handleGetReportingExceptions returned error: %v", err)
-		}
-		if !result.IsError {
-			t.Error("Expected error result for missing lei parameter")
+		_, err := registry.handleGetReportingExceptions(context.Background(), GetReportingExceptionsArgs{LEI: ""})
+		if err == nil {
+			t.Error("Expected error for empty lei parameter")
 		}
 	})
 }

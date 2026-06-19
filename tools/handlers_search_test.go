@@ -4,15 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/olgasafonova/gleif-mcp-server/internal/gleif"
 )
 
 // Tests for the search and autocomplete handlers. Shared test helpers
-// (newTestServer, newTestRegistry, makeRequest, getResultText,
-// mockSearchResponse) live in handlers_test.go in the same package.
+// (newTestServer, newTestRegistry, mockSearchResponse) live in handlers_test.go
+// in the same package.
 
 // TestHandleSearchEntity tests the search_entity handler.
 func TestHandleSearchEntity(t *testing.T) {
@@ -20,7 +19,7 @@ func TestHandleSearchEntity(t *testing.T) {
 		ts := newTestServer()
 		defer ts.Close()
 
-		ts.mux.HandleFunc("/lei-records", func(w http.ResponseWriter, r *http.Request) {
+		ts.mux.HandleFunc("/lei-records", func(w http.ResponseWriter, _ *http.Request) {
 			resp := mockSearchResponse(
 				gleif.LEIRecord{
 					LEI:    "HWUPKR0MPOU8FGXBT394",
@@ -32,19 +31,12 @@ func TestHandleSearchEntity(t *testing.T) {
 		})
 
 		registry := newTestRegistry(ts.URL())
-		req := makeRequest(map[string]any{"query": "Apple"})
-
-		result, err := registry.handleSearchEntity(context.Background(), req)
+		result, err := registry.handleSearchEntity(context.Background(), SearchEntityArgs{Query: "Apple"})
 		if err != nil {
 			t.Fatalf("handleSearchEntity returned error: %v", err)
 		}
-		if result.IsError {
-			t.Fatalf("handleSearchEntity returned error result: %s", getResultText(result))
-		}
-
-		text := getResultText(result)
-		if !strings.Contains(text, "Apple Inc.") {
-			t.Errorf("Expected result to contain 'Apple Inc.', got: %s", text)
+		if result.Count != 1 || result.Results[0].LegalName != "Apple Inc." {
+			t.Errorf("Expected one Apple Inc. result, got: %+v", result)
 		}
 	})
 
@@ -52,39 +44,30 @@ func TestHandleSearchEntity(t *testing.T) {
 		ts := newTestServer()
 		defer ts.Close()
 
-		ts.mux.HandleFunc("/lei-records", func(w http.ResponseWriter, r *http.Request) {
+		ts.mux.HandleFunc("/lei-records", func(w http.ResponseWriter, _ *http.Request) {
 			resp := mockSearchResponse()
 			w.Header().Set("Content-Type", "application/vnd.api+json")
 			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
-		req := makeRequest(map[string]any{
-			"query": "Test",
-			"limit": float64(10),
-			"page":  float64(2),
-			"fuzzy": false,
+		noFuzzy := false
+		_, err := registry.handleSearchEntity(context.Background(), SearchEntityArgs{
+			Query: "Test",
+			Limit: 10,
+			Page:  2,
+			Fuzzy: &noFuzzy,
 		})
-
-		result, err := registry.handleSearchEntity(context.Background(), req)
 		if err != nil {
 			t.Fatalf("handleSearchEntity returned error: %v", err)
-		}
-		if result.IsError {
-			t.Fatalf("handleSearchEntity returned error result: %s", getResultText(result))
 		}
 	})
 
-	t.Run("missing query parameter", func(t *testing.T) {
+	t.Run("empty query parameter", func(t *testing.T) {
 		registry := newTestRegistry("http://unused")
-		req := makeRequest(map[string]any{})
-
-		result, err := registry.handleSearchEntity(context.Background(), req)
-		if err != nil {
-			t.Fatalf("handleSearchEntity returned error: %v", err)
-		}
-		if !result.IsError {
-			t.Error("Expected error result for missing query parameter")
+		_, err := registry.handleSearchEntity(context.Background(), SearchEntityArgs{Query: ""})
+		if err == nil {
+			t.Error("Expected error for empty query parameter")
 		}
 	})
 }
@@ -95,7 +78,7 @@ func TestHandleSearchByBIC(t *testing.T) {
 		ts := newTestServer()
 		defer ts.Close()
 
-		ts.mux.HandleFunc("/lei-records", func(w http.ResponseWriter, r *http.Request) {
+		ts.mux.HandleFunc("/lei-records", func(w http.ResponseWriter, _ *http.Request) {
 			resp := mockSearchResponse(
 				gleif.LEIRecord{
 					LEI:    "7LTWFZYICNSX8D621K86",
@@ -107,19 +90,12 @@ func TestHandleSearchByBIC(t *testing.T) {
 		})
 
 		registry := newTestRegistry(ts.URL())
-		req := makeRequest(map[string]any{"bic": "DEUTDEFF"})
-
-		result, err := registry.handleSearchByBIC(context.Background(), req)
+		result, err := registry.handleSearchByBIC(context.Background(), SearchByBICArgs{BIC: "DEUTDEFF"})
 		if err != nil {
 			t.Fatalf("handleSearchByBIC returned error: %v", err)
 		}
-		if result.IsError {
-			t.Fatalf("handleSearchByBIC returned error result: %s", getResultText(result))
-		}
-
-		text := getResultText(result)
-		if !strings.Contains(text, `"found": true`) {
-			t.Errorf("Expected found=true in result, got: %s", text)
+		if !result.Found {
+			t.Error("Expected found=true")
 		}
 	})
 
@@ -127,52 +103,38 @@ func TestHandleSearchByBIC(t *testing.T) {
 		ts := newTestServer()
 		defer ts.Close()
 
-		ts.mux.HandleFunc("/lei-records", func(w http.ResponseWriter, r *http.Request) {
+		ts.mux.HandleFunc("/lei-records", func(w http.ResponseWriter, _ *http.Request) {
 			resp := mockSearchResponse()
 			w.Header().Set("Content-Type", "application/vnd.api+json")
 			_ = json.NewEncoder(w).Encode(resp)
 		})
 
 		registry := newTestRegistry(ts.URL())
-		req := makeRequest(map[string]any{"bic": "TESTTEST"})
-
-		result, err := registry.handleSearchByBIC(context.Background(), req)
+		result, err := registry.handleSearchByBIC(context.Background(), SearchByBICArgs{BIC: "TESTTEST"})
 		if err != nil {
 			t.Fatalf("handleSearchByBIC returned error: %v", err)
 		}
-		if result.IsError {
-			t.Fatalf("handleSearchByBIC returned error result: %s", getResultText(result))
+		if result.Found {
+			t.Error("Expected found=false")
 		}
-
-		text := getResultText(result)
-		if !strings.Contains(text, `"found": false`) {
-			t.Errorf("Expected found=false in result, got: %s", text)
+		if result.Records == nil {
+			t.Error("Expected non-nil (empty) records slice on no-results")
 		}
 	})
 
 	t.Run("invalid bic length", func(t *testing.T) {
 		registry := newTestRegistry("http://unused")
-		req := makeRequest(map[string]any{"bic": "TOOLONG1234567890"})
-
-		result, err := registry.handleSearchByBIC(context.Background(), req)
-		if err != nil {
-			t.Fatalf("handleSearchByBIC returned error: %v", err)
-		}
-		if !result.IsError {
-			t.Error("Expected error result for invalid bic length")
+		_, err := registry.handleSearchByBIC(context.Background(), SearchByBICArgs{BIC: "TOOLONG1234567890"})
+		if err == nil {
+			t.Error("Expected error for invalid bic length")
 		}
 	})
 
-	t.Run("missing bic parameter", func(t *testing.T) {
+	t.Run("empty bic parameter", func(t *testing.T) {
 		registry := newTestRegistry("http://unused")
-		req := makeRequest(map[string]any{})
-
-		result, err := registry.handleSearchByBIC(context.Background(), req)
-		if err != nil {
-			t.Fatalf("handleSearchByBIC returned error: %v", err)
-		}
-		if !result.IsError {
-			t.Error("Expected error result for missing bic parameter")
+		_, err := registry.handleSearchByBIC(context.Background(), SearchByBICArgs{BIC: ""})
+		if err == nil {
+			t.Error("Expected error for empty bic parameter")
 		}
 	})
 }
@@ -183,7 +145,7 @@ func TestHandleSearchByISIN(t *testing.T) {
 		ts := newTestServer()
 		defer ts.Close()
 
-		ts.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		ts.mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 			resp := mockSearchResponse(
 				gleif.LEIRecord{
 					LEI:    "HWUPKR0MPOU8FGXBT394",
@@ -195,40 +157,28 @@ func TestHandleSearchByISIN(t *testing.T) {
 		})
 
 		registry := newTestRegistry(ts.URL())
-		req := makeRequest(map[string]any{"isin": "US0378331005"})
-
-		result, err := registry.handleSearchByISIN(context.Background(), req)
+		result, err := registry.handleSearchByISIN(context.Background(), SearchByISINArgs{ISIN: "US0378331005"})
 		if err != nil {
 			t.Fatalf("handleSearchByISIN returned error: %v", err)
 		}
-		if result.IsError {
-			t.Fatalf("handleSearchByISIN returned error result: %s", getResultText(result))
+		if !result.Found {
+			t.Error("Expected found=true")
 		}
 	})
 
 	t.Run("invalid isin length", func(t *testing.T) {
 		registry := newTestRegistry("http://unused")
-		req := makeRequest(map[string]any{"isin": "TOOLONG1234567890"})
-
-		result, err := registry.handleSearchByISIN(context.Background(), req)
-		if err != nil {
-			t.Fatalf("handleSearchByISIN returned error: %v", err)
-		}
-		if !result.IsError {
-			t.Error("Expected error result for invalid isin length")
+		_, err := registry.handleSearchByISIN(context.Background(), SearchByISINArgs{ISIN: "TOOLONG1234567890"})
+		if err == nil {
+			t.Error("Expected error for invalid isin length")
 		}
 	})
 
-	t.Run("missing isin parameter", func(t *testing.T) {
+	t.Run("empty isin parameter", func(t *testing.T) {
 		registry := newTestRegistry("http://unused")
-		req := makeRequest(map[string]any{})
-
-		result, err := registry.handleSearchByISIN(context.Background(), req)
-		if err != nil {
-			t.Fatalf("handleSearchByISIN returned error: %v", err)
-		}
-		if !result.IsError {
-			t.Error("Expected error result for missing isin parameter")
+		_, err := registry.handleSearchByISIN(context.Background(), SearchByISINArgs{ISIN: ""})
+		if err == nil {
+			t.Error("Expected error for empty isin parameter")
 		}
 	})
 }
@@ -239,7 +189,7 @@ func TestHandleSearchByCountry(t *testing.T) {
 		ts := newTestServer()
 		defer ts.Close()
 
-		ts.mux.HandleFunc("/lei-records", func(w http.ResponseWriter, r *http.Request) {
+		ts.mux.HandleFunc("/lei-records", func(w http.ResponseWriter, _ *http.Request) {
 			resp := mockSearchResponse(
 				gleif.LEIRecord{
 					LEI:    "HWUPKR0MPOU8FGXBT394",
@@ -251,45 +201,28 @@ func TestHandleSearchByCountry(t *testing.T) {
 		})
 
 		registry := newTestRegistry(ts.URL())
-		req := makeRequest(map[string]any{"country": "US"})
-
-		result, err := registry.handleSearchByCountry(context.Background(), req)
+		result, err := registry.handleSearchByCountry(context.Background(), SearchByCountryArgs{Country: "US"})
 		if err != nil {
 			t.Fatalf("handleSearchByCountry returned error: %v", err)
 		}
-		if result.IsError {
-			t.Fatalf("handleSearchByCountry returned error result: %s", getResultText(result))
-		}
-
-		text := getResultText(result)
-		if !strings.Contains(text, `"country": "US"`) {
-			t.Errorf("Expected country=US in result, got: %s", text)
+		if result.Country != "US" {
+			t.Errorf("Expected country=US, got %q", result.Country)
 		}
 	})
 
 	t.Run("invalid country code", func(t *testing.T) {
 		registry := newTestRegistry("http://unused")
-		req := makeRequest(map[string]any{"country": "USA"})
-
-		result, err := registry.handleSearchByCountry(context.Background(), req)
-		if err != nil {
-			t.Fatalf("handleSearchByCountry returned error: %v", err)
-		}
-		if !result.IsError {
-			t.Error("Expected error result for invalid country code")
+		_, err := registry.handleSearchByCountry(context.Background(), SearchByCountryArgs{Country: "USA"})
+		if err == nil {
+			t.Error("Expected error for invalid country code")
 		}
 	})
 
-	t.Run("missing country parameter", func(t *testing.T) {
+	t.Run("empty country parameter", func(t *testing.T) {
 		registry := newTestRegistry("http://unused")
-		req := makeRequest(map[string]any{})
-
-		result, err := registry.handleSearchByCountry(context.Background(), req)
-		if err != nil {
-			t.Fatalf("handleSearchByCountry returned error: %v", err)
-		}
-		if !result.IsError {
-			t.Error("Expected error result for missing country parameter")
+		_, err := registry.handleSearchByCountry(context.Background(), SearchByCountryArgs{Country: ""})
+		if err == nil {
+			t.Error("Expected error for empty country parameter")
 		}
 	})
 }
@@ -300,7 +233,7 @@ func TestHandleAutocomplete(t *testing.T) {
 		ts := newTestServer()
 		defer ts.Close()
 
-		ts.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		ts.mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 			resp := mockSearchResponse(
 				gleif.LEIRecord{
 					LEI:    "HWUPKR0MPOU8FGXBT394",
@@ -312,32 +245,20 @@ func TestHandleAutocomplete(t *testing.T) {
 		})
 
 		registry := newTestRegistry(ts.URL())
-		req := makeRequest(map[string]any{"prefix": "Apple"})
-
-		result, err := registry.handleAutocomplete(context.Background(), req)
+		result, err := registry.handleAutocomplete(context.Background(), AutocompleteArgs{Prefix: "Apple"})
 		if err != nil {
 			t.Fatalf("handleAutocomplete returned error: %v", err)
 		}
-		if result.IsError {
-			t.Fatalf("handleAutocomplete returned error result: %s", getResultText(result))
-		}
-
-		text := getResultText(result)
-		if !strings.Contains(text, "suggestions") {
-			t.Errorf("Expected result to contain 'suggestions', got: %s", text)
+		if result.Prefix != "Apple" {
+			t.Errorf("Expected prefix echoed back, got %q", result.Prefix)
 		}
 	})
 
-	t.Run("missing prefix parameter", func(t *testing.T) {
+	t.Run("prefix too short", func(t *testing.T) {
 		registry := newTestRegistry("http://unused")
-		req := makeRequest(map[string]any{})
-
-		result, err := registry.handleAutocomplete(context.Background(), req)
-		if err != nil {
-			t.Fatalf("handleAutocomplete returned error: %v", err)
-		}
-		if !result.IsError {
-			t.Error("Expected error result for missing prefix parameter")
+		_, err := registry.handleAutocomplete(context.Background(), AutocompleteArgs{Prefix: "A"})
+		if err == nil {
+			t.Error("Expected error for prefix shorter than 2 characters")
 		}
 	})
 }
