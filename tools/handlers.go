@@ -217,14 +217,18 @@ func buildIDSearchResult(records []gleif.LEIRecord, emptyMessage string) IDSearc
 		return IDSearchResult{
 			Found:   false,
 			Count:   0,
-			Records: []gleif.LEIRecord{},
+			Results: []SimpleRecord{},
 			Message: emptyMessage,
 		}
 	}
+	results := make([]SimpleRecord, 0, len(records))
+	for _, rec := range records {
+		results = append(results, simplifyRecord(rec))
+	}
 	return IDSearchResult{
 		Found:   true,
-		Count:   len(records),
-		Records: records,
+		Count:   len(results),
+		Results: results,
 	}
 }
 
@@ -302,14 +306,26 @@ func (r *Registry) handleAutocomplete(ctx context.Context, args AutocompleteArgs
 	}, nil
 }
 
-func (r *Registry) handleListLEIIssuers(ctx context.Context, _ ListLEIIssuersArgs) (IssuersResult, error) {
+func (r *Registry) handleListLEIIssuers(ctx context.Context, args ListLEIIssuersArgs) (IssuersResult, error) {
 	issuers, err := r.client.ListLEIIssuers(ctx)
 	if err != nil {
 		return IssuersResult{}, fmt.Errorf("failed to list LEI issuers: %w", err)
 	}
+	limit := args.Limit
+	if limit < 1 || limit > 1000 {
+		limit = 100
+	}
+	total := len(issuers)
+	truncated := false
+	if total > limit {
+		issuers = issuers[:limit]
+		truncated = true
+	}
 	return IssuersResult{
-		Count:   len(issuers),
-		Issuers: issuers,
+		Count:     len(issuers),
+		Total:     total,
+		Issuers:   issuers,
+		Truncated: truncated,
 	}, nil
 }
 

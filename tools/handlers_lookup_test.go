@@ -127,6 +127,38 @@ func TestHandleListLEIIssuers(t *testing.T) {
 			t.Errorf("Expected count=1, got %d", result.Count)
 		}
 	})
+
+	t.Run("caps to limit", func(t *testing.T) {
+		ts := newTestServer()
+		defer ts.Close()
+
+		ts.mux.HandleFunc("/lei-issuers", func(w http.ResponseWriter, _ *http.Request) {
+			resp := gleif.APIResponse[gleif.LEIIssuer]{
+				Data: []gleif.DataItem[gleif.LEIIssuer]{
+					{ID: "A", Type: "lei-issuers", Attributes: gleif.LEIIssuer{Name: "Issuer A", Country: "DE"}},
+					{ID: "B", Type: "lei-issuers", Attributes: gleif.LEIIssuer{Name: "Issuer B", Country: "FR"}},
+					{ID: "C", Type: "lei-issuers", Attributes: gleif.LEIIssuer{Name: "Issuer C", Country: "US"}},
+				},
+			}
+			w.Header().Set("Content-Type", "application/vnd.api+json")
+			_ = json.NewEncoder(w).Encode(resp)
+		})
+
+		registry := newTestRegistry(ts.URL())
+		result, err := registry.handleListLEIIssuers(context.Background(), ListLEIIssuersArgs{Limit: 2})
+		if err != nil {
+			t.Fatalf("handleListLEIIssuers returned error: %v", err)
+		}
+		if result.Count != 2 {
+			t.Errorf("expected capped count=2, got %d", result.Count)
+		}
+		if result.Total != 3 {
+			t.Errorf("expected total=3, got %d", result.Total)
+		}
+		if !result.Truncated {
+			t.Error("expected truncated=true")
+		}
+	})
 }
 
 // TestHandleGetReportingExceptions tests the get_reporting_exceptions handler.
