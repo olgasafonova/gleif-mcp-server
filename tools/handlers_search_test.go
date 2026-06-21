@@ -97,6 +97,13 @@ func TestHandleSearchByBIC(t *testing.T) {
 		if !result.Found {
 			t.Error("Expected found=true")
 		}
+		// HG-2: records are projected to the trimmed SimpleRecord shape.
+		if len(result.Results) != 1 {
+			t.Fatalf("expected 1 projected result, got %d", len(result.Results))
+		}
+		if result.Results[0].LegalName != "Deutsche Bank AG" {
+			t.Errorf("expected projected legalName, got %q", result.Results[0].LegalName)
+		}
 	})
 
 	t.Run("no results", func(t *testing.T) {
@@ -117,8 +124,8 @@ func TestHandleSearchByBIC(t *testing.T) {
 		if result.Found {
 			t.Error("Expected found=false")
 		}
-		if result.Records == nil {
-			t.Error("Expected non-nil (empty) records slice on no-results")
+		if result.Results == nil {
+			t.Error("Expected non-nil (empty) results slice on no-results")
 		}
 	})
 

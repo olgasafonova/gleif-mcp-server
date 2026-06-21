@@ -75,8 +75,10 @@ type GetLEIIssuerArgs struct {
 	IssuerID string `json:"issuer_id" jsonschema:"LEI issuer (Local Operating Unit) ID, 4-32 alphanumeric characters"`
 }
 
-// ListLEIIssuersArgs are the arguments for list_lei_issuers (none).
-type ListLEIIssuersArgs struct{}
+// ListLEIIssuersArgs are the arguments for list_lei_issuers.
+type ListLEIIssuersArgs struct {
+	Limit int `json:"limit,omitempty" jsonschema:"Max issuers to return, 1-1000 (default 100). This tool does not page; raise limit for more"`
+}
 
 // GetReportingExceptionsArgs are the arguments for get_reporting_exceptions.
 type GetReportingExceptionsArgs struct {
@@ -119,14 +121,14 @@ type SearchEntityResult struct {
 	HasMore    *bool          `json:"hasMore,omitempty"`
 }
 
-// IDSearchResult is the result of search_by_bic and search_by_isin. The full
-// LEI records are returned (not the trimmed SimpleRecord), matching the prior
-// behaviour of these two tools.
+// IDSearchResult is the result of search_by_bic and search_by_isin. Records are
+// projected to the trimmed SimpleRecord shape (HG-2 cost-lens) and surfaced
+// under "results", matching search_entity rather than dumping raw LEI records.
 type IDSearchResult struct {
-	Found   bool              `json:"found"`
-	Count   int               `json:"count"`
-	Records []gleif.LEIRecord `json:"records"`
-	Message string            `json:"message,omitempty"`
+	Found   bool           `json:"found"`
+	Count   int            `json:"count"`
+	Results []SimpleRecord `json:"results"`
+	Message string         `json:"message,omitempty"`
 }
 
 // CountryRecord is the trimmed entity shape used by search_by_country (four
@@ -160,8 +162,10 @@ type AutocompleteToolResult struct {
 
 // IssuersResult is the result of list_lei_issuers.
 type IssuersResult struct {
-	Count   int               `json:"count"`
-	Issuers []gleif.LEIIssuer `json:"issuers"`
+	Count     int               `json:"count"`
+	Total     int               `json:"total"`
+	Issuers   []gleif.LEIIssuer `json:"issuers"`
+	Truncated bool              `json:"truncated,omitempty"`
 }
 
 // ReportingExceptionsResult is the result of get_reporting_exceptions.
