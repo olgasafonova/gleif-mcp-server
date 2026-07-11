@@ -6,7 +6,7 @@ Verify any company's legal identity in one question. Look up LEI codes, validate
 [![Go Report Card](https://goreportcard.com/badge/github.com/olgasafonova/gleif-mcp-server?v=2)](https://goreportcard.com/report/github.com/olgasafonova/gleif-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**29 tools** for LEI lookup, entity search, BIC/SWIFT cross-referencing, corporate ownership, and batch validation. Works with Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, and other MCP-compatible tools.
+**12 tools** for LEI lookup, entity search, BIC/SWIFT cross-referencing, corporate ownership, and batch validation. Works with Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, and other MCP-compatible tools.
 
 ## Use Cases
 
