@@ -3,8 +3,9 @@
 Verify any company's legal identity in one question. Look up LEI codes, validate counterparties, and trace corporate ownership structures using the official GLEIF database. Covers 2.8M+ entities across 200+ jurisdictions.
 
 [![CI](https://github.com/olgasafonova/gleif-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/olgasafonova/gleif-mcp-server/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/olgasafonova/gleif-mcp-server?v=2)](https://goreportcard.com/report/github.com/olgasafonova/gleif-mcp-server)
+![lint](https://github.com/olgasafonova/gleif-mcp-server/actions/workflows/lint.yml/badge.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<!-- CodeScene Code Health badge: add after onboarding repo at codescene.io -->
 
 **12 tools** for LEI lookup, entity search, BIC/SWIFT cross-referencing, corporate ownership, and batch validation. Works with Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, and other MCP-compatible tools.
 

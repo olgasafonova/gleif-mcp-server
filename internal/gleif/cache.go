@@ -140,10 +140,10 @@ func (c *Cache) recordMiss() {
 //
 // Because Go generics don't allow methods to be generic, this is a package-
 // level function taking the cache, the typed LRU, and the key.
-func lookupEntry[T any](
+func lookupEntry[K comparable, T any](
 	c *Cache,
-	store *lru.Cache[string, cacheEntry[T]],
-	key string,
+	store *lru.Cache[K, cacheEntry[T]],
+	key K,
 ) (T, bool) {
 	var zero T
 	if !c.config.Enabled || store == nil {
@@ -160,6 +160,25 @@ func lookupEntry[T any](
 	}
 
 	return entry.value, true
+}
+
+// storeEntry is the write-side counterpart to lookupEntry: it performs the
+// shared "check enabled, wrap with TTL, add" flow for every typed cache.
+// Disabled caches and nil stores are silently skipped, matching the read side.
+func storeEntry[K comparable, T any](
+	c *Cache,
+	store *lru.Cache[K, cacheEntry[T]],
+	key K,
+	value T,
+	ttl time.Duration,
+) {
+	if !c.config.Enabled || store == nil {
+		return
+	}
+	store.Add(key, cacheEntry[T]{
+		value:     value,
+		expiresAt: time.Now().Add(ttl),
+	})
 }
 
 // GetLEI retrieves a cached LEI record. Returns a deep copy so callers can
@@ -195,10 +214,7 @@ func (c *Cache) SetLEI(lei string, record *LEIRecord) {
 		return
 	}
 
-	c.leiCache.Add(lei, cacheEntry[*LEIRecord]{
-		value:     stored,
-		expiresAt: time.Now().Add(c.config.LEIRecordTTL),
-	})
+	storeEntry(c, c.leiCache, lei, stored, c.config.LEIRecordTTL)
 }
 
 // GetValidation retrieves a cached validation result.
@@ -213,14 +229,7 @@ func (c *Cache) GetValidation(lei string) (*ValidationResult, bool) {
 
 // SetValidation caches a validation result.
 func (c *Cache) SetValidation(lei string, result *ValidationResult) {
-	if !c.config.Enabled || c.validCache == nil {
-		return
-	}
-
-	c.validCache.Add(lei, cacheEntry[*ValidationResult]{
-		value:     result,
-		expiresAt: time.Now().Add(c.config.ValidationTTL),
-	})
+	storeEntry(c, c.validCache, lei, result, c.config.ValidationTTL)
 }
 
 // GetSearch retrieves cached search results.
@@ -235,14 +244,7 @@ func (c *Cache) GetSearch(key string) ([]LEIRecord, bool) {
 
 // SetSearch caches search results.
 func (c *Cache) SetSearch(key string, records []LEIRecord) {
-	if !c.config.Enabled || c.searchCache == nil {
-		return
-	}
-
-	c.searchCache.Add(key, cacheEntry[[]LEIRecord]{
-		value:     records,
-		expiresAt: time.Now().Add(c.config.SearchTTL),
-	})
+	storeEntry(c, c.searchCache, key, records, c.config.SearchTTL)
 }
 
 // GetAutocomplete retrieves cached autocomplete results.
@@ -257,14 +259,7 @@ func (c *Cache) GetAutocomplete(prefix string) ([]AutocompleteResult, bool) {
 
 // SetAutocomplete caches autocomplete results.
 func (c *Cache) SetAutocomplete(prefix string, results []AutocompleteResult) {
-	if !c.config.Enabled || c.autoCache == nil {
-		return
-	}
-
-	c.autoCache.Add(prefix, cacheEntry[[]AutocompleteResult]{
-		value:     results,
-		expiresAt: time.Now().Add(c.config.AutocompleteTTL),
-	})
+	storeEntry(c, c.autoCache, prefix, results, c.config.AutocompleteTTL)
 }
 
 // Stats returns cache statistics.
