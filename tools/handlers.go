@@ -21,16 +21,51 @@ import (
 
 // --- Clean tools: return existing client types directly ---
 
-func (r *Registry) handleLEILookup(ctx context.Context, args LEILookupArgs) (*gleif.LEIRecord, error) {
-	lei, err := gleif.ParseLEI(args.LEI)
+// fetchByID centralizes the parse-then-fetch shape shared by the single-record
+// lookup handlers (LEI lookup, LEI issuer lookup): validate the raw identifier
+// with the typed Parse* constructor, then fetch the record via the client.
+// invalidLabel and fetchLabel keep the original per-tool error wording.
+func fetchByID[ID ~string, R any](
+	ctx context.Context,
+	raw string,
+	parse func(string) (ID, error),
+	fetch func(context.Context, ID) (*R, error),
+	invalidLabel, fetchLabel string,
+) (*R, error) {
+	id, err := parse(raw)
 	if err != nil {
-		return nil, fmt.Errorf("invalid LEI: %w", err)
+		return nil, fmt.Errorf("invalid %s: %w", invalidLabel, err)
 	}
-	record, err := r.client.GetLEI(ctx, lei)
+	record, err := fetch(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch LEI: %w", err)
+		return nil, fmt.Errorf("failed to fetch %s: %w", fetchLabel, err)
 	}
 	return record, nil
+}
+
+// searchByID centralizes the parse-then-search shape shared by the identifier
+// search handlers (BIC, ISIN): validate the raw identifier, run the search,
+// and shape the uniform IDSearchResult.
+func searchByID[ID ~string](
+	ctx context.Context,
+	raw string,
+	parse func(string) (ID, error),
+	search func(context.Context, ID) ([]gleif.LEIRecord, error),
+	label, emptyMessage string,
+) (IDSearchResult, error) {
+	id, err := parse(raw)
+	if err != nil {
+		return IDSearchResult{}, fmt.Errorf("invalid %s: %w", label, err)
+	}
+	records, err := search(ctx, id)
+	if err != nil {
+		return IDSearchResult{}, fmt.Errorf("%s search failed: %w", label, err)
+	}
+	return buildIDSearchResult(records, emptyMessage), nil
+}
+
+func (r *Registry) handleLEILookup(ctx context.Context, args LEILookupArgs) (*gleif.LEIRecord, error) {
+	return fetchByID(ctx, args.LEI, gleif.ParseLEI, r.client.GetLEI, "LEI", "LEI")
 }
 
 func (r *Registry) handleValidateLEI(ctx context.Context, args ValidateLEIArgs) (*gleif.ValidationResult, error) {
@@ -44,15 +79,7 @@ func (r *Registry) handleValidateLEI(ctx context.Context, args ValidateLEIArgs) 
 }
 
 func (r *Registry) handleGetLEIIssuer(ctx context.Context, args GetLEIIssuerArgs) (*gleif.LEIIssuer, error) {
-	issuerID, err := gleif.ParseIssuerID(args.IssuerID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid issuer_id: %w", err)
-	}
-	issuer, err := r.client.GetLEIIssuer(ctx, issuerID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch LEI issuer: %w", err)
-	}
-	return issuer, nil
+	return fetchByID(ctx, args.IssuerID, gleif.ParseIssuerID, r.client.GetLEIIssuer, "issuer_id", "LEI issuer")
 }
 
 // --- Tools with structured Result types ---
@@ -186,27 +213,11 @@ func buildSearchResult(records []gleif.LEIRecord, pagination *gleif.Pagination) 
 }
 
 func (r *Registry) handleSearchByBIC(ctx context.Context, args SearchByBICArgs) (IDSearchResult, error) {
-	bic, err := gleif.ParseBIC(args.BIC)
-	if err != nil {
-		return IDSearchResult{}, fmt.Errorf("invalid BIC: %w", err)
-	}
-	records, err := r.client.SearchByBIC(ctx, bic)
-	if err != nil {
-		return IDSearchResult{}, fmt.Errorf("BIC search failed: %w", err)
-	}
-	return buildIDSearchResult(records, "No LEI found for this BIC code"), nil
+	return searchByID(ctx, args.BIC, gleif.ParseBIC, r.client.SearchByBIC, "BIC", "No LEI found for this BIC code")
 }
 
 func (r *Registry) handleSearchByISIN(ctx context.Context, args SearchByISINArgs) (IDSearchResult, error) {
-	isin, err := gleif.ParseISIN(args.ISIN)
-	if err != nil {
-		return IDSearchResult{}, fmt.Errorf("invalid ISIN: %w", err)
-	}
-	records, err := r.client.SearchByISIN(ctx, isin)
-	if err != nil {
-		return IDSearchResult{}, fmt.Errorf("ISIN search failed: %w", err)
-	}
-	return buildIDSearchResult(records, "No issuer LEI found for this ISIN"), nil
+	return searchByID(ctx, args.ISIN, gleif.ParseISIN, r.client.SearchByISIN, "ISIN", "No issuer LEI found for this ISIN")
 }
 
 // buildIDSearchResult shapes BIC/ISIN search results uniformly. The empty case
