@@ -1,7 +1,7 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "generated_at": "2026-06-05T17:40:02Z",
-  "deslop_version": "2.1.0",
+  "deslop_version": "2.3.0",
   "scores": {
     "file_health": 100.0,
     "test_coverage": 100.0,
