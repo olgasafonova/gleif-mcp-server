@@ -8,16 +8,67 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/olgasafonova/gleif-mcp-server/internal/gleif"
 	"github.com/olgasafonova/gleif-mcp-server/tools"
+	"github.com/olgasafonova/mcp-cache-go/mcpcache"
 )
 
 const (
 	ServerName    = "gleif-mcp-server"
 	ServerVersion = "0.7.0"
 )
+
+// toolListTTL is how long a client may cache this server's tool list.
+//
+// The tool set is fixed at compile time and only changes when a release ships,
+// so an hour is conservative rather than aggressive. Without this the SDK
+// advertises ttlMs:0, which the MCP 2026-07-28 spec defines as immediately
+// stale, and a compliant client re-fetches the list every turn.
+const toolListTTL = time.Hour
+
+// cacheConfig is the cache-hint policy for this server.
+//
+// Only the two list-shaped methods are stamped. Default stays zero on purpose:
+// a blanket default would also cover resources/read, which returns live content.
+// This server registers no resources or prompts today, so listing the methods
+// explicitly keeps that true if it ever does.
+func cacheConfig() mcpcache.Config {
+	return mcpcache.Config{
+		TTLs: map[string]time.Duration{
+			mcpcache.MethodListTools: toolListTTL,
+			mcpcache.MethodDiscover:  toolListTTL,
+		},
+	}
+}
+
+// newServer builds the configured MCP server: tools registered and middleware
+// attached. Extracted from main so a test can drive a real tools/list through it
+// rather than asserting on the config in isolation.
+func newServer(gleifClient *gleif.Client, logger *slog.Logger) *mcp.Server {
+	server := mcp.NewServer(&mcp.Implementation{
+		Name:    ServerName,
+		Version: ServerVersion,
+	}, &mcp.ServerOptions{
+		Logger:       logger,
+		Instructions: serverInstructions,
+		// Suppress pre-initialize notifications/tools/list_changed from go-sdk.
+		// Without this, AddTool triggers a notification before the client completes
+		// the initialize handshake, causing intermittent connection failures.
+		Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{}},
+	})
+
+	// Advertise a cache TTL on list results. The SDK leaves ttlMs at 0, so
+	// without this a compliant client treats every tools/list as stale.
+	server.AddReceivingMiddleware(mcpcache.Middleware(cacheConfig()))
+
+	toolRegistry := tools.NewRegistry(gleifClient, logger)
+	toolRegistry.RegisterAll(server)
+
+	return server
+}
 
 func main() {
 	// Parse command-line flags
@@ -37,21 +88,7 @@ func main() {
 	gleifClient := gleif.NewClient(gleif.DefaultConfig(), logger)
 
 	// Create MCP server
-	server := mcp.NewServer(&mcp.Implementation{
-		Name:    ServerName,
-		Version: ServerVersion,
-	}, &mcp.ServerOptions{
-		Logger:       logger,
-		Instructions: serverInstructions,
-		// Suppress pre-initialize notifications/tools/list_changed from go-sdk.
-		// Without this, AddTool triggers a notification before the client completes
-		// the initialize handshake, causing intermittent connection failures.
-		Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{}},
-	})
-
-	// Register tools
-	toolRegistry := tools.NewRegistry(gleifClient, logger)
-	toolRegistry.RegisterAll(server)
+	server := newServer(gleifClient, logger)
 
 	logger.Info("Starting GLEIF MCP Server",
 		"name", ServerName,
