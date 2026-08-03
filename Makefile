@@ -2,6 +2,7 @@
 
 # Variables
 BINARY_NAME=gleif-mcp-server
+GOBIN_DIR:=$(shell go env GOPATH)/bin
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
 LDFLAGS=-ldflags "-w -s -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
@@ -88,7 +89,7 @@ clean: ## Clean build artifacts
 
 .PHONY: install
 install: build ## Install binary to GOPATH/bin
-	cp $(BINARY_NAME) $(GOPATH)/bin/
+	cp $(BINARY_NAME) $(GOBIN_DIR)/
 
 .PHONY: check
 check: deps fmt vet lint test ## Run all checks (no build)
