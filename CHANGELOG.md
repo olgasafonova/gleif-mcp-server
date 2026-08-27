@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Released binaries now self-report the real release version instead of a frozen literal. `ServerVersion` is a package-level `var` (default `dev`) stamped at build time via `-ldflags "-X main.ServerVersion=X.Y.Z"` in release.yml, docker.yml (Dockerfile `VERSION` build arg), and the Makefile; previously the const `0.7.0` shipped in v0.9.0 binaries. The GLEIF API `User-Agent` header derives from the same variable through `Config.UserAgent` instead of the frozen `gleif-mcp-server/0.2.0`. The Makefile's old `-X main.Version`/`-X main.BuildTime` flags pointed at symbols that do not exist and were silently dropped.
+
 ## [0.9.0] - 2026-05-10
 
 ### Changed

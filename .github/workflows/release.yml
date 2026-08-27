@@ -51,7 +51,9 @@ jobs:
             mkdir -p "$bundle_dir"
 
             echo "Building $GOOS/$GOARCH..."
-            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w" -o "$bundle_dir/$binary_name" .
+            # -X main.ServerVersion stamps the tag version so released
+            # binaries self-report it over MCP and in the User-Agent header.
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X main.ServerVersion=$VERSION" -o "$bundle_dir/$binary_name" .
 
             # Create platform-specific manifest
             jq --arg platform "$mcpb_platform" --arg version "$VERSION" \

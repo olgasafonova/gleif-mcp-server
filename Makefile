@@ -3,9 +3,13 @@
 # Variables
 BINARY_NAME=gleif-mcp-server
 GOBIN_DIR:=$(shell go env GOPATH)/bin
-VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
-LDFLAGS=-ldflags "-w -s -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
+# Strip the leading "v" so the stamped version matches release.yml's
+# ${GITHUB_REF_NAME#v}. "grep ." fails on empty output (no git / no tags),
+# falling back to "dev".
+VERSION=$(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' | grep . || echo "dev")
+# main.ServerVersion is a package-level var; a -X flag pointing at a const or
+# missing symbol is silently dropped (the old -X main.Version was exactly that).
+LDFLAGS=-ldflags "-w -s -X main.ServerVersion=$(VERSION)"
 
 # Go parameters
 GOCMD=go

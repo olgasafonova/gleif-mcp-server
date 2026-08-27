@@ -469,6 +469,56 @@ func TestDefaultConfig(t *testing.T) {
 	if !config.EnableCache {
 		t.Error("Expected EnableCache=true")
 	}
+	if config.UserAgent != defaultUserAgent {
+		t.Errorf("Expected UserAgent %q, got %q", defaultUserAgent, config.UserAgent)
+	}
+}
+
+// TestUserAgentHeader verifies the client sends the configured User-Agent on
+// requests (the version main stamps at build time flows in through
+// Config.UserAgent), and falls back to defaultUserAgent when unset.
+func TestUserAgentHeader(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	tests := []struct {
+		name      string
+		userAgent string
+		want      string
+	}{
+		{"configured user agent sent verbatim", "gleif-mcp-server/9.9.9-test", "gleif-mcp-server/9.9.9-test"},
+		{"empty user agent falls back to default", "", defaultUserAgent},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotUA string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotUA = r.Header.Get("User-Agent")
+				w.Header().Set("Content-Type", "application/vnd.api+json")
+				_ = json.NewEncoder(w).Encode(SingleResponse[LEIRecord]{
+					Data: DataItem[LEIRecord]{ID: "HWUPKR0MPOU8FGXBT394", Type: "lei-records"},
+				})
+			}))
+			defer server.Close()
+
+			client := NewClient(Config{
+				BaseURL:     server.URL,
+				Timeout:     5 * time.Second,
+				RateLimit:   100,
+				BurstSize:   10,
+				MaxRetries:  0,
+				EnableCache: false,
+				UserAgent:   tt.userAgent,
+			}, logger)
+
+			if _, err := client.GetLEI(context.Background(), "HWUPKR0MPOU8FGXBT394"); err != nil {
+				t.Fatalf("GetLEI failed: %v", err)
+			}
+			if gotUA != tt.want {
+				t.Errorf("User-Agent = %q, want %q", gotUA, tt.want)
+			}
+		})
+	}
 }
 
 // Helper function to check if error is an APIError.

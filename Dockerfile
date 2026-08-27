@@ -13,8 +13,10 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o gleif-mcp-server .
+# Build the binary. VERSION is passed by docker.yml from the release tag;
+# local builds without --build-arg fall back to "dev".
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.ServerVersion=${VERSION}" -o gleif-mcp-server .
 
 # Final stage - minimal image
 FROM alpine:3.20

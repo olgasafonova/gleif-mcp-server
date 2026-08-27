@@ -16,10 +16,18 @@ import (
 	"github.com/olgasafonova/mcp-cache-go/mcpcache"
 )
 
-const (
-	ServerName    = "gleif-mcp-server"
-	ServerVersion = "0.7.0"
-)
+// ServerName identifies this server over MCP.
+const ServerName = "gleif-mcp-server"
+
+// ServerVersion is reported over MCP and, wired up in main(), in the GLEIF
+// API User-Agent header. It is a var rather than a const so release builds
+// can stamp the real tag version:
+//
+//	go build -ldflags "-X main.ServerVersion=X.Y.Z"
+//
+// release.yml, docker.yml (via the Dockerfile VERSION build arg), and the
+// Makefile all pass that flag. Unstamped builds report "dev".
+var ServerVersion = "dev"
 
 // toolListTTL is how long a client may cache this server's tool list.
 //
@@ -84,8 +92,11 @@ func main() {
 		Level: logLevel,
 	}))
 
-	// Create GLEIF client
-	gleifClient := gleif.NewClient(gleif.DefaultConfig(), logger)
+	// Create GLEIF client. The User-Agent derives from ServerVersion so
+	// upstream sees the stamped release version, not a frozen literal.
+	gleifConfig := gleif.DefaultConfig()
+	gleifConfig.UserAgent = ServerName + "/" + ServerVersion
+	gleifClient := gleif.NewClient(gleifConfig, logger)
 
 	// Create MCP server
 	server := newServer(gleifClient, logger)

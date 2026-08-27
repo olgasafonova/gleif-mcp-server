@@ -26,6 +26,11 @@ const (
 
 	// maxBatchSize is the upper bound on a single batch lookup.
 	maxBatchSize = 100
+
+	// defaultUserAgent is the fallback User-Agent when Config.UserAgent is
+	// empty. Release builds pass the stamped version through Config.UserAgent
+	// (see main.ServerVersion); "dev" marks an unstamped build.
+	defaultUserAgent = "gleif-mcp-server/dev"
 )
 
 // Config holds client configuration.
@@ -37,6 +42,7 @@ type Config struct {
 	MaxRetries  int           // Max retry attempts
 	RetryDelay  time.Duration // Initial retry delay
 	EnableCache bool
+	UserAgent   string // User-Agent header for GLEIF API requests; defaults to defaultUserAgent when empty
 }
 
 // DefaultConfig returns default configuration.
@@ -49,6 +55,7 @@ func DefaultConfig() Config {
 		MaxRetries:  3,
 		RetryDelay:  time.Second,
 		EnableCache: true,
+		UserAgent:   defaultUserAgent,
 	}
 }
 
@@ -56,6 +63,7 @@ func DefaultConfig() Config {
 type Client struct {
 	httpClient *http.Client
 	baseURL    string
+	userAgent  string
 	logger     *slog.Logger
 	limiter    *rate.Limiter
 	cache      *Cache
@@ -73,6 +81,10 @@ type Client struct {
 
 // NewClient creates a new GLEIF client.
 func NewClient(config Config, logger *slog.Logger) *Client {
+	userAgent := config.UserAgent
+	if userAgent == "" {
+		userAgent = defaultUserAgent
+	}
 	cache, _ := NewCache(CacheConfig{
 		LEIRecordTTL:    time.Hour,
 		ValidationTTL:   24 * time.Hour,
@@ -100,11 +112,12 @@ func NewClient(config Config, logger *slog.Logger) *Client {
 				return http.ErrUseLastResponse
 			},
 		},
-		baseURL: config.BaseURL,
-		logger:  logger,
-		limiter: rate.NewLimiter(rate.Limit(config.RateLimit), config.BurstSize),
-		cache:   cache,
-		config:  config,
+		baseURL:   config.BaseURL,
+		userAgent: userAgent,
+		logger:    logger,
+		limiter:   rate.NewLimiter(rate.Limit(config.RateLimit), config.BurstSize),
+		cache:     cache,
+		config:    config,
 	}
 }
 
@@ -190,7 +203,7 @@ func (c *Client) executeAndRead(ctx context.Context, reqURL string) ([]byte, int
 	}
 	req.Header.Set("Accept", "application/vnd.api+json")
 	req.Header.Set("Accept-Encoding", "gzip")
-	req.Header.Set("User-Agent", "gleif-mcp-server/0.2.0")
+	req.Header.Set("User-Agent", c.userAgent)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
