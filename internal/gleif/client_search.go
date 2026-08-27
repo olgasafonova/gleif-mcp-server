@@ -154,11 +154,27 @@ func (c *Client) SearchByCountry(ctx context.Context, country Country, limit int
 	return records, nil
 }
 
+// AutocompleteMaxLimit is the most suggestions Autocomplete returns, and the
+// default when no limit is given. The GLEIF /autocompletions endpoint serves
+// at most 10 suggestions and ignores page[size] (verified against the live
+// API, 27-08-2026), so a larger limit is unfulfillable. Exported so the tool
+// schema bound in tools/args.go is pinned against it in tests.
+const AutocompleteMaxLimit = 10
+
+// clampAutocompleteLimit normalizes the autocomplete limit. Values outside
+// 1..AutocompleteMaxLimit become AutocompleteMaxLimit: an over-bound request
+// caps AT the bound (never below it), so asking for more than the API can
+// serve still returns everything it does serve.
+func clampAutocompleteLimit(limit int) int {
+	if limit <= 0 || limit > AutocompleteMaxLimit {
+		return AutocompleteMaxLimit
+	}
+	return limit
+}
+
 // Autocomplete returns entity name suggestions.
 func (c *Client) Autocomplete(ctx context.Context, prefix string, limit int) ([]AutocompleteResult, error) {
-	if limit <= 0 || limit > 20 {
-		limit = 10
-	}
+	limit = clampAutocompleteLimit(limit)
 
 	if results, ok := c.cache.GetAutocomplete(prefix); ok {
 		return applyLimit(results, limit), nil

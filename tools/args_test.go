@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -15,6 +16,31 @@ import (
 // JSON wire shape: field tags, omitempty behaviour, and lossless round-trips.
 
 func boolPtr(b bool) *bool { return &b }
+
+// TestAutocompleteSchemaMatchesClientClamp pins the limit bound the tool
+// schema advertises to the bound the client actually enforces
+// (gleif.AutocompleteMaxLimit), so the two cannot drift apart again. The
+// schema once promised 1-50 while the client clamped anything above 20 down
+// to 10; an agent asking for 50 silently got 10.
+func TestAutocompleteSchemaMatchesClientClamp(t *testing.T) {
+	field, ok := reflect.TypeOf(AutocompleteArgs{}).FieldByName("Limit")
+	if !ok {
+		t.Fatal("AutocompleteArgs has no Limit field")
+	}
+	tag := field.Tag.Get("jsonschema")
+
+	wantBound := fmt.Sprintf("1-%d", gleif.AutocompleteMaxLimit)
+	if !strings.Contains(tag, wantBound) {
+		t.Errorf("AutocompleteArgs.Limit jsonschema tag %q does not advertise the range %q enforced by gleif.AutocompleteMaxLimit", tag, wantBound)
+	}
+
+	// The client also uses the bound as the default for omitted/zero limits
+	// (clampAutocompleteLimit), so the advertised default must match too.
+	wantDefault := fmt.Sprintf("default %d", gleif.AutocompleteMaxLimit)
+	if !strings.Contains(tag, wantDefault) {
+		t.Errorf("AutocompleteArgs.Limit jsonschema tag %q does not advertise %q", tag, wantDefault)
+	}
+}
 
 // TestArgsResultJSONRoundTrip marshals a populated instance of every Args and
 // Result type, checks the expected JSON keys appear (and no others), and

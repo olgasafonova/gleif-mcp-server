@@ -37,6 +37,32 @@ func TestClampLimitAndPage(t *testing.T) {
 	}
 }
 
+// TestClampAutocompleteLimit verifies autocomplete limit normalization. The
+// invariant that once broke: an over-bound request must cap AT the bound
+// (the old clamp sent limit>20 back to 10, below what the API can serve).
+func TestClampAutocompleteLimit(t *testing.T) {
+	tests := []struct {
+		name  string
+		limit int
+		want  int
+	}{
+		{"zero defaults to max", 0, AutocompleteMaxLimit},
+		{"negative defaults to max", -5, AutocompleteMaxLimit},
+		{"in-range passthrough", 5, 5},
+		{"bound allowed", AutocompleteMaxLimit, AutocompleteMaxLimit},
+		{"just over bound caps at bound", AutocompleteMaxLimit + 1, AutocompleteMaxLimit},
+		{"far over bound caps at bound, never below", 50, AutocompleteMaxLimit},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := clampAutocompleteLimit(tt.limit); got != tt.want {
+				t.Errorf("clampAutocompleteLimit(%d) = %d, want %d", tt.limit, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestApplyLimit verifies the slice-truncate helper.
 func TestApplyLimit(t *testing.T) {
 	tests := []struct {

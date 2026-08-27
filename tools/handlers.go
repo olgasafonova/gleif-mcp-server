@@ -302,11 +302,9 @@ func (r *Registry) handleAutocomplete(ctx context.Context, args AutocompleteArgs
 		return AutocompleteToolResult{}, fmt.Errorf("prefix must be at least 2 characters")
 	}
 
-	limit := args.Limit
-	if limit == 0 {
-		limit = 10
-	}
-	suggestions, err := r.client.Autocomplete(ctx, args.Prefix, limit)
+	// The client normalizes the limit (gleif.clampAutocompleteLimit):
+	// omitted/zero becomes the default, over-bound caps at the bound.
+	suggestions, err := r.client.Autocomplete(ctx, args.Prefix, args.Limit)
 	if err != nil {
 		return AutocompleteToolResult{}, fmt.Errorf("autocomplete failed: %w", err)
 	}

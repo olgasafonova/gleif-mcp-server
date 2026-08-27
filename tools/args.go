@@ -67,7 +67,7 @@ type GetRelationshipsArgs struct {
 // AutocompleteArgs are the arguments for autocomplete.
 type AutocompleteArgs struct {
 	Prefix string `json:"prefix" jsonschema:"Name prefix to complete (minimum 2 characters)"`
-	Limit  int    `json:"limit,omitempty" jsonschema:"Max suggestions, 1-50 (default 10)"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Max suggestions, 1-10 (default 10). GLEIF's autocomplete endpoint serves at most 10; larger values are capped at 10"`
 }
 
 // GetLEIIssuerArgs are the arguments for get_lei_issuer.

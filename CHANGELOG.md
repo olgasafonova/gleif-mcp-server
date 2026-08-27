@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `autocomplete`: the `limit` schema and the client clamp now agree. The schema promised 1-50 while the client clamped anything above 20 down to 10, so an agent asking for 50 silently got 10. The GLEIF `/autocompletions` endpoint serves at most 10 suggestions and ignores `page[size]` (verified against the live API), so the honest contract is 1-10: the schema now says 1-10 and the clamp caps at the bound (`gleif.AutocompleteMaxLimit`), never below it. A test pins the schema bound to the client constant so they cannot drift apart again.
 - Released binaries now self-report the real release version instead of a frozen literal. `ServerVersion` is a package-level `var` (default `dev`) stamped at build time via `-ldflags "-X main.ServerVersion=X.Y.Z"` in release.yml, docker.yml (Dockerfile `VERSION` build arg), and the Makefile; previously the const `0.7.0` shipped in v0.9.0 binaries. The GLEIF API `User-Agent` header derives from the same variable through `Config.UserAgent` instead of the frozen `gleif-mcp-server/0.2.0`. The Makefile's old `-X main.Version`/`-X main.BuildTime` flags pointed at symbols that do not exist and were silently dropped.
 
 ## [0.9.0] - 2026-05-10
