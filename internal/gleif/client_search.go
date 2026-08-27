@@ -181,17 +181,28 @@ func (c *Client) Autocomplete(ctx context.Context, prefix string, limit int) ([]
 	}
 
 	params := url.Values{}
+	// `field` is REQUIRED by the endpoint: without it every call 400s and the
+	// fuzzy fallback silently serves all traffic (bead claude-code-config-jekc).
+	params.Set("field", "fulltext")
 	params.Set("q", prefix)
 	reqURL := fmt.Sprintf("%s/autocompletions?%s", c.baseURL, params.Encode())
 	c.logger.Debug("Autocomplete", "prefix", prefix, "url", reqURL)
 
-	var resp AutocompleteResponse
+	var resp autocompleteAPIResponse
 	if err := c.doRequestWithRetry(ctx, reqURL, &resp); err != nil {
 		return c.fuzzyAutocompleteFallback(ctx, prefix, limit)
 	}
 
-	c.cache.SetAutocomplete(prefix, resp.Data)
-	return applyLimit(resp.Data, limit), nil
+	results := make([]AutocompleteResult, len(resp.Data))
+	for i, d := range resp.Data {
+		results[i] = AutocompleteResult{
+			LEI:       d.Relationships.LEIRecords.Data.ID,
+			LegalName: d.Attributes.Value,
+		}
+	}
+
+	c.cache.SetAutocomplete(prefix, results)
+	return applyLimit(results, limit), nil
 }
 
 // fuzzyAutocompleteFallback runs a fuzzy search and reshapes the records into

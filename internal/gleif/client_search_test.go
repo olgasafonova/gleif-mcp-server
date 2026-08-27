@@ -271,26 +271,42 @@ func TestSearchByCountry(t *testing.T) {
 	}
 }
 
-// TestAutocompletePrimary verifies the autocomplete endpoint shapes results and
-// applies the limit.
+// autocompleteWireFixture is CAPTURED from the live /autocompletions endpoint
+// (27-08-2026, q=deutsche), trimmed to three items. Never hand-shape this: the
+// previous fixture encoded an imagined flat {lei,value} layout that the real
+// API never sends, and the mismatch was invisible because a missing `field`
+// parameter sent every call down the fuzzy fallback (bead claude-code-config-jekc).
+const autocompleteWireFixture = `{"data":[
+  {"type":"autocompletions","attributes":{"value":"Apple Inc.","highlighting":"<b>App</b>le Inc."},"relationships":{"lei-records":{"data":{"type":"lei-records","id":"LEI-APPLE-1"}}}},
+  {"type":"autocompletions","attributes":{"value":"Apple Bank","highlighting":"<b>App</b>le Bank"},"relationships":{"lei-records":{"data":{"type":"lei-records","id":"LEI-APPLE-2"}}}},
+  {"type":"autocompletions","attributes":{"value":"Apple Leasing","highlighting":"<b>App</b>le Leasing"},"relationships":{"lei-records":{"data":{"type":"lei-records","id":"LEI-APPLE-3"}}}}
+]}`
+
+// TestAutocompletePrimary verifies the request carries the REQUIRED field
+// parameter, the wire shape decodes into projected results, and the limit
+// applies.
 func TestAutocompletePrimary(t *testing.T) {
+	var gotQuery string
 	client, _ := newMockClient(t, func(w http.ResponseWriter, r *http.Request) {
-		resp := AutocompleteResponse{
-			Data: []AutocompleteResult{
-				{LEI: "1", LegalName: "Apple Inc."},
-				{LEI: "2", LegalName: "Apple Bank"},
-				{LEI: "3", LegalName: "Apple Leasing"},
-			},
-		}
-		_ = json.NewEncoder(w).Encode(resp)
+		gotQuery = r.URL.RawQuery
+		_, _ = w.Write([]byte(autocompleteWireFixture))
 	})
 
 	results, err := client.Autocomplete(context.Background(), "App", 2)
 	if err != nil {
 		t.Fatalf("Autocomplete failed: %v", err)
 	}
+	if !strings.Contains(gotQuery, "field=fulltext") {
+		t.Errorf("query = %q, want required field=fulltext (without it the endpoint 400s and every call rides the fuzzy fallback)", gotQuery)
+	}
 	if len(results) != 2 {
-		t.Errorf("got %d results, want 2 (limit applied)", len(results))
+		t.Fatalf("got %d results, want 2 (limit applied)", len(results))
+	}
+	if results[0].LegalName != "Apple Inc." {
+		t.Errorf("LegalName = %q, want %q (must come from attributes.value)", results[0].LegalName, "Apple Inc.")
+	}
+	if results[0].LEI != "LEI-APPLE-1" {
+		t.Errorf("LEI = %q, want %q (must come from relationships.lei-records.data.id)", results[0].LEI, "LEI-APPLE-1")
 	}
 }
 
@@ -334,13 +350,7 @@ func TestAutocompleteServesFromCache(t *testing.T) {
 	var calls int
 	client, _ := newMockClientCached(t, func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		resp := AutocompleteResponse{
-			Data: []AutocompleteResult{
-				{LEI: "1", LegalName: "Apple Inc."},
-				{LEI: "2", LegalName: "Apple Bank"},
-			},
-		}
-		_ = json.NewEncoder(w).Encode(resp)
+		_, _ = w.Write([]byte(autocompleteWireFixture))
 	})
 
 	if _, err := client.Autocomplete(context.Background(), "App", 5); err != nil {

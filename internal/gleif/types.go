@@ -189,16 +189,36 @@ type Links struct {
 	Related string `json:"related,omitempty"`
 }
 
-// AutocompleteResult represents a single autocomplete suggestion.
+// AutocompleteResult represents a single autocomplete suggestion, projected
+// for tool output. Country is filled only by the fuzzy fallback: the real
+// /autocompletions payload does not carry one.
 type AutocompleteResult struct {
 	LEI       string `json:"lei"`
 	LegalName string `json:"value"`
 	Country   string `json:"country,omitempty"`
 }
 
-// AutocompleteResponse is the API response for autocomplete.
-type AutocompleteResponse struct {
-	Data []AutocompleteResult `json:"data"`
+// autocompleteAPIResponse is the WIRE shape of /autocompletions, captured from
+// the live endpoint 27-08-2026 (bead claude-code-config-jekc). The suggestion
+// text sits under attributes.value and the LEI under
+// relationships.lei-records.data.id. The previous flat decode was imagined,
+// not captured, and was never exercised: without the required `field`
+// parameter every call 400'd into the fuzzy fallback, so decoding ten blank
+// suggestions at 200 was one parameter away.
+type autocompleteAPIResponse struct {
+	Data []struct {
+		Attributes struct {
+			Value        string `json:"value"`
+			Highlighting string `json:"highlighting"`
+		} `json:"attributes"`
+		Relationships struct {
+			LEIRecords struct {
+				Data struct {
+					ID string `json:"id"`
+				} `json:"data"`
+			} `json:"lei-records"`
+		} `json:"relationships"`
+	} `json:"data"`
 }
 
 // ValidationResult contains LEI validation info.
