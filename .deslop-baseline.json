@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "generated_at": "2026-06-05T17:40:02Z",
-  "deslop_version": "2.3.0",
+  "generated_at": "2026-10-20T07:05:18Z",
+  "deslop_version": "2.4.0",
   "scores": {
     "file_health": 100.0,
     "test_coverage": 100.0,
@@ -9,7 +9,17 @@
     "todo_debt": 100.0,
     "dependency_health": 100.0,
     "structural_quality": 100.0,
+    "executable_hooks": 100.0,
     "overall": 100.0
   },
-  "findings": []
+  "findings": [
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "internal/gleif/client_test.go",
+      "summary": "internal/gleif/client_test.go (531 LOC); score-exempt (test file), listed for visibility",
+      "fingerprint": "sha256:12b78a479891349baff604a3d10d26f81fdfd7399aab90905e0f1b24a6b1c5d2",
+      "id": "12b7"
+    }
+  ]
 }
