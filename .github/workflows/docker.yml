@@ -62,6 +62,7 @@ jobs:
           push: true
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
+            CERT_REFRESH=${{ github.run_id }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
