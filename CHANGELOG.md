@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.10.0] - 2026-11-14
+## [1.0.0] - 2026-11-14
+
+The first major version. The tool set is unchanged at 12 tools, but three changes break existing callers, so under Article XIV of CONSTITUTION.md this cannot ship as a minor release.
+
+### Upgrade notes (breaking)
+- `search_by_bic` and `search_by_isin` return six-field records under `results`, where they returned full LEI records under `records`. Call `lei_lookup` for the full record.
+- Tool errors are plain text, not a JSON object with `error`, `code`, `message` and `retryable`.
+- Arguments a tool does not declare are refused instead of ignored.
 
 ### Added
 - All 12 tools now publish an `outputSchema` and return `structuredContent` alongside the text result. Tools are registered through the go-sdk generic `mcp.AddTool[Args, Result]` with typed argument and result structs; previously no tool had an output schema.
@@ -16,10 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for MCP protocol revision 2026-07-28, including the `server/discover` request, through go-sdk v1.7.0. Clients on 2025-11-25 negotiate that revision as before.
 
 ### Changed
-- **Breaking for callers that parse results:** `search_by_bic` and `search_by_isin` return trimmed records under `results` (`lei`, `legalName`, `country`, `city`, `status`, `regStatus`), the same shape `search_entity` uses. They previously returned full LEI records under `records`. Call `lei_lookup` with the returned LEI for the full record.
-- Tool errors are returned as a plain message prefixed with the tool name. The JSON error object with `error`, `code`, `message` and `retryable` fields is no longer produced. A panic in a handler returns `internal error (correlation_id=...)`; the panic value and stack are logged on the server only.
+- **Breaking:** `search_by_bic` and `search_by_isin` return trimmed records under `results` (`lei`, `legalName`, `country`, `city`, `status`, `regStatus`), the same shape `search_entity` uses. They previously returned full LEI records under `records`. Call `lei_lookup` with the returned LEI for the full record.
+- **Breaking:** tool errors are plain text. The JSON error object with `error`, `code`, `message` and `retryable` fields is no longer produced. An error raised by a tool is prefixed with the tool name (`lei_lookup: invalid LEI: ...`). An argument error is reported by the SDK before the tool runs (`validating "arguments": ...`). A panic in a handler returns `internal error (correlation_id=...)`; the panic value and stack are logged on the server only.
 - Input schemas are derived from the typed argument structs. Required arguments are still enforced by the schema. Pattern, length and range constraints are no longer published as schema keywords; the server validates or clamps those values itself and the argument descriptions state the bounds.
-- go-sdk v1.7.0 behaviour that applies on every protocol revision: `readOnlyHint` and `idempotentHint` are always serialized instead of omitted when false, and invalid parameters are reported as JSON-RPC error `-32602`.
+- **Breaking:** unknown arguments are refused. Every input schema now sets `additionalProperties: false`, so a call that passes an argument the tool does not declare fails with `unexpected additional properties`. 0.9.0 ignored such arguments.
 - Release binaries and the Docker build stage are compiled with Go 1.26 (was 1.25).
 - Bumped `github.com/modelcontextprotocol/go-sdk` from v1.6.0 to v1.8.0, plus `golang.org/x/sync` and `golang.org/x/time` updates.
 - Internal: refactors in the cache, handlers and request retry code, added and split tests, a standalone lint workflow, and CI maintenance. No behaviour change intended.
@@ -32,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `make install` copies the binary to `$(go env GOPATH)/bin`. With `GOPATH` unset in the shell the target previously resolved to `/bin/` and failed.
 
 ### Security
-- Docker image: the runtime base moves from alpine 3.20, which is past end of life, to alpine 3.24, and `ca-certificates` is reinstalled on every image build instead of being served from a cached build layer. The eMudhra CA keys leaked on 19-10-2026 and Alpine shipped `ca-certificates` 20261020-r0 in response. Images published before this release predate that package and still trust the old certificate bundle; pull the `0.10.0` image to get the current one.
+- Docker image: the runtime base moves from alpine 3.20, which is past end of life, to alpine 3.24, and `ca-certificates` is reinstalled on every image build instead of being served from a cached build layer. The eMudhra intermediate CA keys leaked on 19-10-2026 and Alpine published `ca-certificates` 20261020-r0 the next day. Images published before this release predate that package and keep the old certificate bundle; pull the `1.0.0` or `latest` image to get the current one.
 
 ## [0.9.0] - 2026-05-10
 
