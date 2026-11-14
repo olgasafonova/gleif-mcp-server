@@ -19,10 +19,11 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.ServerVersion=${VERSION}" -o gleif-mcp-server .
 
 # Final stage - minimal image
-FROM alpine:3.20
+FROM alpine:3.24
 
 # Add ca-certificates for HTTPS requests to GLEIF API
-RUN apk add --no-cache ca-certificates
+ARG CERT_REFRESH=unset
+RUN echo "ca-certificates refresh: ${CERT_REFRESH}" && apk add --no-cache ca-certificates
 
 WORKDIR /app
 
