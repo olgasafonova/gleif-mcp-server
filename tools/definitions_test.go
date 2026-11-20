@@ -110,3 +110,13 @@ func TestGetToolByNameDefinitions(t *testing.T) {
 		t.Error("GetToolByName should return nil for unknown tools")
 	}
 }
+
+func TestAllToolsOpenWorld(t *testing.T) {
+	for _, tool := range AllTools {
+		t.Run(tool.Name, func(t *testing.T) {
+			if !tool.OpenWorld {
+				t.Errorf("tool %q should be OpenWorld (every tool calls api.gleif.org)", tool.Name)
+			}
+		})
+	}
+}

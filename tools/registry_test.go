@@ -170,3 +170,63 @@ func TestPanicRecovery(t *testing.T) {
 		t.Errorf("expected correlation_id in caller-facing error, got: %s", text)
 	}
 }
+
+// TestEmittedAnnotations asserts the annotations a client actually receives
+// from tools/list, not just the ToolSpec fields. openWorldHint is a pointer in
+// the go-sdk and is omitted from the wire when nil, so it must be checked as
+// present AND true; a missing field would silently fall back to the spec default.
+func TestEmittedAnnotations(t *testing.T) {
+	registry := newTestRegistry("http://example.invalid")
+	cs := connectInMemory(t, registry)
+
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	titles := make(map[string]string, len(AllTools))
+	for _, spec := range AllTools {
+		titles[spec.Name] = spec.Title
+	}
+	for _, tool := range res.Tools {
+		t.Run(tool.Name, func(t *testing.T) {
+			a := tool.Annotations
+			if a == nil {
+				t.Fatal("annotations are nil")
+			}
+			if a.Title == "" || a.Title != titles[tool.Name] {
+				t.Errorf("title = %q, want %q", a.Title, titles[tool.Name])
+			}
+			if !a.ReadOnlyHint {
+				t.Error("readOnlyHint = false, want true")
+			}
+			if !a.IdempotentHint {
+				t.Error("idempotentHint = false, want true")
+			}
+			if a.OpenWorldHint == nil {
+				t.Fatal("openWorldHint omitted, want explicit true")
+			}
+			if !*a.OpenWorldHint {
+				t.Error("openWorldHint = false, want true")
+			}
+		})
+	}
+}
+
+// TestBuildToolEmitsFalseOpenWorld confirms buildTool emits openWorldHint
+// explicitly even when the spec value is false, rather than dropping the field.
+func TestBuildToolEmitsFalseOpenWorld(t *testing.T) {
+	tool := buildTool(ToolSpec{Name: "local", Title: "Local", ReadOnly: true})
+	if tool.Annotations.OpenWorldHint == nil {
+		t.Fatal("openWorldHint omitted for OpenWorld=false spec")
+	}
+	if *tool.Annotations.OpenWorldHint {
+		t.Error("openWorldHint = true, want false")
+	}
+	raw, err := json.Marshal(tool.Annotations)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(raw), `"openWorldHint":false`) {
+		t.Errorf("wire annotations missing openWorldHint:false: %s", raw)
+	}
+}

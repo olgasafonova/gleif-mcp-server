@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- All 12 tools now send `openWorldHint: true` explicitly. The 0.7.0 entry listed OpenWorldHint, but `buildTool` never emitted it. A new test asserts the annotations clients receive from `tools/list`.
+
 ## [1.0.0] - 2026-11-14
 
 The first major version. The tool set is unchanged at 12 tools, but three changes break existing callers, so under Article XIV of CONSTITUTION.md this cannot ship as a minor release.

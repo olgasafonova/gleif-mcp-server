@@ -12,6 +12,11 @@ type ToolSpec struct {
 	Category    string
 	ReadOnly    bool
 	Idempotent  bool
+	// OpenWorld marks a tool that reaches an external system (here, every tool
+	// calls api.gleif.org). buildTool always emits it as openWorldHint, so a
+	// tool that forgets it would advertise openWorldHint:false; the
+	// TestAllToolsOpenWorld guard catches that.
+	OpenWorld bool
 }
 
 // AllTools defines all available MCP tools.
@@ -25,6 +30,7 @@ var AllTools = []ToolSpec{
 		Category:    "lookup",
 		ReadOnly:    true,
 		Idempotent:  true,
+		OpenWorld:   true,
 		Description: `Get full details for a specific LEI code (legal name, address, jurisdiction, status, managing LOU, renewal dates). USE WHEN: "look up LEI", "LEI details", "who is HWUPKR0MPOU8FGXBT394?" For validating format and status only, use validate_lei. For multiple LEIs at once, use batch_lei_lookup. FAILS WHEN: LEI is not exactly 20 alphanumeric characters (fix format and retry), LEI not found in GLEIF database (entity may not have an LEI; try search_entity by name instead).`,
 	},
 
@@ -34,6 +40,7 @@ var AllTools = []ToolSpec{
 		Category:    "validation",
 		ReadOnly:    true,
 		Idempotent:  true,
+		OpenWorld:   true,
 		Description: `Check if an LEI code is valid and active. USE WHEN: "is this LEI valid?", "verify LEI", "check LEI format". Performs format (20 chars), check digit (ISO 17442), and database status checks. For full entity details, use lei_lookup instead. NOTE: Never returns an error for invalid LEIs; returns valid=false with a reason message instead. Safe to call on untrusted input.`,
 	},
 
@@ -43,6 +50,7 @@ var AllTools = []ToolSpec{
 		Category:    "lookup",
 		ReadOnly:    true,
 		Idempotent:  true,
+		OpenWorld:   true,
 		Description: `Look up multiple LEI records in one request (max 100). USE WHEN: "look up these LEIs", "batch lookup", user provides 2+ LEI codes. Faster than calling lei_lookup repeatedly. FAILS WHEN: list is empty (provide at least one LEI), more than 100 LEIs (split into multiple calls), any individual LEI has invalid format (fix that specific LEI; the error message includes its position).`,
 	},
 
@@ -55,6 +63,7 @@ var AllTools = []ToolSpec{
 		Category:   "search",
 		ReadOnly:   true,
 		Idempotent: true,
+		OpenWorld:  true,
 		Description: `Search for legal entities by name with fuzzy matching and pagination. For quick name suggestions, use autocomplete instead.
 
 USE WHEN: "find company X", "search for X", "look up company X"
@@ -68,6 +77,7 @@ FAILS WHEN: no results found (try autocomplete for name suggestions, or check sp
 		Category:    "search",
 		ReadOnly:    true,
 		Idempotent:  true,
+		OpenWorld:   true,
 		Description: `Find a bank's LEI from its BIC/SWIFT code (8 or 11 characters). USE WHEN: "find LEI from BIC", "BIC to LEI", "SWIFT code lookup", user provides a BIC code. Returns matching entity with LEI, legal name, country, and registration status. FAILS WHEN: BIC is not 8 or 11 characters (fix input), no entity mapped to this BIC (not all banks have LEIs; try search_entity with the bank name instead).`,
 	},
 
@@ -77,6 +87,7 @@ FAILS WHEN: no results found (try autocomplete for name suggestions, or check sp
 		Category:    "search",
 		ReadOnly:    true,
 		Idempotent:  true,
+		OpenWorld:   true,
 		Description: `Find the issuer's LEI from a securities ISIN code (12 characters). USE WHEN: "who issued ISIN US0378331005?", "ISIN to LEI", user provides an ISIN. Returns issuer entity with LEI, legal name, country, and registration status. FAILS WHEN: ISIN is not 12 characters (fix input), no issuer found for this ISIN (some securities lack LEI mapping).`,
 	},
 
@@ -86,6 +97,7 @@ FAILS WHEN: no results found (try autocomplete for name suggestions, or check sp
 		Category:    "search",
 		ReadOnly:    true,
 		Idempotent:  true,
+		OpenWorld:   true,
 		Description: `List entities registered in a specific country. USE WHEN: "companies in Germany", "LEIs from US", "entities in country X". Pass ISO 2-letter code (US, GB, DE). Returns entity list with LEI, legal name, and status for each. Returns up to 'limit' results (max 100); this tool does not page, so raise 'limit' to get more rather than requesting a next page. FAILS WHEN: country code is not a 2-letter ISO 3166-1 alpha-2 code (use "US" not "USA", "GB" not "UK").`,
 	},
 
@@ -98,6 +110,7 @@ FAILS WHEN: no results found (try autocomplete for name suggestions, or check sp
 		Category:   "ownership",
 		ReadOnly:   true,
 		Idempotent: true,
+		OpenWorld:  true,
 		Description: `Get corporate ownership and fund relationships for an entity.
 
 USE WHEN: "who owns X?", "parent company", "subsidiaries", "fund manager"
@@ -116,6 +129,7 @@ FAILS WHEN: LEI format invalid (must be 20 alphanumeric chars), no relationships
 		Category:    "utility",
 		ReadOnly:    true,
 		Idempotent:  true,
+		OpenWorld:   true,
 		Description: `Get entity name suggestions from a prefix (min 2 characters). USE WHEN: "suggest companies starting with X", "autocomplete company name", user is typing a name and needs quick suggestions. For full search results with pagination, use search_entity instead. Returns name suggestions with LEI and legal name for each match. FAILS WHEN: prefix is shorter than 2 characters. Falls back to fuzzy search automatically if the autocomplete endpoint is unavailable.`,
 	},
 
@@ -128,6 +142,7 @@ FAILS WHEN: LEI format invalid (must be 20 alphanumeric chars), no relationships
 		Category:    "issuers",
 		ReadOnly:    true,
 		Idempotent:  true,
+		OpenWorld:   true,
 		Description: `Get details about a specific LEI issuer (Local Operating Unit / LOU) by ID. USE WHEN: "details on this LOU", "issuer info". Returns issuer name, country, status, website, and count of sponsored LEIs. For all issuers worldwide, use list_lei_issuers. FAILS WHEN: issuer ID not found (use list_lei_issuers to get valid IDs).`,
 	},
 
@@ -137,6 +152,7 @@ FAILS WHEN: LEI format invalid (must be 20 alphanumeric chars), no relationships
 		Category:    "issuers",
 		ReadOnly:    true,
 		Idempotent:  true,
+		OpenWorld:   true,
 		Description: `List all LEI issuers (Local Operating Units / LOUs) worldwide. USE WHEN: "show all LOUs", "which organizations issue LEIs?", "LEI issuer directory". Returns all issuers with name, country, status, and sponsored LEI count. For one specific issuer, use get_lei_issuer.`,
 	},
 
@@ -149,6 +165,7 @@ FAILS WHEN: LEI format invalid (must be 20 alphanumeric chars), no relationships
 		Category:    "compliance",
 		ReadOnly:    true,
 		Idempotent:  true,
+		OpenWorld:   true,
 		Description: `Explains why parent/ownership data may be missing for an entity. USE WHEN: "why no parent info?", "reporting exceptions", "missing ownership data". Returns list of Level 2 exceptions, each with type (NON_CONSOLIDATING, NO_KNOWN_PERSON, NATURAL_PERSONS, NON_PUBLIC), category, and reference entity. Empty list when entity has no exceptions (parent data is complete). FAILS WHEN: LEI format invalid (must be 20 alphanumeric chars).`,
 	},
 }
