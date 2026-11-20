@@ -99,8 +99,11 @@ func registerTyped[Args, Result any](
 }
 
 // buildTool constructs the tool metadata. InputSchema is left nil so the go-sdk
-// infers it from the handler's Args type.
+// infers it from the handler's Args type. OpenWorldHint is a pointer in the
+// go-sdk, so it is always set from the spec: leaving it nil would omit the field
+// and rely on the client applying the spec default.
 func buildTool(spec ToolSpec) *mcp.Tool {
+	openWorld := spec.OpenWorld
 	return &mcp.Tool{
 		Name:        spec.Name,
 		Description: spec.Description,
@@ -108,6 +111,7 @@ func buildTool(spec ToolSpec) *mcp.Tool {
 			Title:          spec.Title,
 			ReadOnlyHint:   spec.ReadOnly,
 			IdempotentHint: spec.Idempotent,
+			OpenWorldHint:  &openWorld,
 		},
 	}
 }
